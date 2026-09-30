@@ -1,124 +1,90 @@
 {
   "master": "MASTER_AGENT",
-  "pattern": "manager-owned orchestration; specialists return bounded artifacts",
+  "pattern": "manager-owned orchestration; specialists return bounded, testable artifacts",
+  "branch": "dev/v1.1.6",
+  "program_status": "ACTIVE",
+  "clinical_mode_enabled": false,
+  "release_target": "v1.1.6 research platform hardening",
+  "execution_order": [
+    "P0 build/runtime integrity",
+    "P1 DICOM/XA reliability",
+    "P2 whole-case memory",
+    "P3 model/evidence contracts",
+    "P4 Guardian/Coverage",
+    "P5 voice/UX",
+    "P6 multimodal interfaces",
+    "P7 validation/release"
+  ],
   "agents": {
     "A01": {
       "file": "A01_COMPETITOR_PRODUCT.md",
-      "features": [
-        "competitor matrix",
-        "claims registry",
-        "Lebanon verification",
-        "differentiation"
-      ]
+      "status": "active",
+      "current_work": ["requirements delta", "competitive matrix refresh", "claim verification"]
     },
     "A02": {
       "file": "A02_WINDOWS_PLATFORM.md",
-      "features": [
-        "C#/.NET WPF shell",
-        "Visual Studio 2022 solution",
-        "packaging",
-        "config",
-        "workstation deployment"
-      ]
+      "status": "active",
+      "current_work": ["async/cancellation hardening", "service boundaries", "build/runtime resilience"]
     },
     "A03": {
       "file": "A03_IMAGING_DICOM.md",
-      "features": [
-        "cine/video ingest",
-        "DICOM/XA",
-        "metadata",
-        "PACS/feed adapters"
-      ]
+      "status": "active",
+      "current_work": ["DICOMDIR resilience", "multi-frame/multi-instance XA", "render/cache failure handling"]
     },
     "A04": {
       "file": "A04_VESSEL_VISION.md",
-      "features": [
-        "segmentation",
-        "centerlines",
-        "vessel labels",
-        "quality/best-frame"
-      ]
+      "status": "active",
+      "current_work": ["versioned vessel model contract", "adapter validation", "no-model fail-closed path"]
     },
     "A05": {
       "file": "A05_LESION_QCA.md",
-      "features": [
-        "lesion localization",
-        "stenosis/QCA",
-        "length/diameter",
-        "manual correction"
-      ]
+      "status": "active",
+      "current_work": ["lesion/QCA evidence schema", "measurement validation", "manual-vs-model provenance"]
     },
     "A06": {
       "file": "A06_MULTIVIEW_MEMORY.md",
-      "features": [
-        "lesion identity",
-        "whole-case memory",
-        "cross-cine linkage",
-        "pre/post matching"
-      ]
+      "status": "active",
+      "current_work": ["case graph", "cross-cine evidence index", "deduplication"]
     },
     "A07": {
       "file": "A07_GUARDIAN_COVERAGE.md",
-      "features": [
-        "Guardian Mode",
-        "Coverage Guardian",
-        "alert scoring",
-        "abstention"
-      ]
+      "status": "active",
+      "current_work": ["coverage engine", "cross-vessel alert rules", "duplicate/rate suppression"]
     },
     "A08": {
       "file": "A08_VOICE_COPILOT.md",
-      "features": [
-        "grounded Q&A",
-        "show me why",
-        "voice alerts",
-        "bilingual commands"
-      ]
+      "status": "active",
+      "current_work": ["constrained intents", "command dispatcher", "auditable TTS/ASR"]
     },
     "A09": {
       "file": "A09_PHYSIOLOGY_FUSION.md",
-      "features": [
-        "FFR/iFR import",
-        "physiology research",
-        "IVUS/OCT fusion",
-        "contradiction cards"
-      ]
+      "status": "active",
+      "current_work": ["FFR/iFR/IVUS/OCT contracts", "provenance", "disagreement model"]
     },
     "A10": {
       "file": "A10_HUMAN_FACTORS_UX.md",
-      "features": [
-        "Cath-Lab UX",
-        "alarm fatigue",
-        "table-side controls",
-        "remote second opinion"
-      ]
+      "status": "active",
+      "current_work": ["cath-lab readability", "alert hierarchy", "1366x768/high-DPI acceptance"]
     },
     "A11": {
       "file": "A11_SECURITY_REGULATORY.md",
-      "features": [
-        "RBAC",
-        "audit",
-        "mode separation",
-        "cybersecurity",
-        "traceability"
-      ]
+      "status": "active",
+      "current_work": ["PHI-minimized logging", "localhost gateway controls", "threat/risk register"]
     },
     "A12": {
       "file": "A12_VALIDATION_QA.md",
-      "features": [
-        "tests",
-        "metrics",
-        "retrospective validation",
-        "external validation",
-        "regression gates"
-      ]
+      "status": "active",
+      "current_work": ["core unit tests", "DICOM/gateway integration tests", "release gate"]
     }
   },
-  "current_sprint": "S1 C# Windows Foundation + DICOM/XA adapter contract",
-  "next_sprint": "S2 Research DICOM/XA ingest + manual evidence annotations",
   "platform": {
     "windows_app": "C#/.NET 8 WPF",
-    "ai_research": "Python/ONNX/TensorRT candidates",
-    "clinical_mode_enabled": false
+    "ai_research": "Python research adapters; future ONNX/TensorRT/native production inference",
+    "raw_dicom_cloud_upload": false,
+    "fake_medical_detector_allowed": false
+  },
+  "definition_of_program_complete": {
+    "software_platform": "buildable, testable, local-first research workstation with DICOM/XA, whole-case state, evidence, coverage, guardian, voice, audit, and extensible model interfaces",
+    "clinical_ai": "requires real datasets, trained/validated models, external validation, quality/regulatory work and hospital approval; cannot be fabricated by software orchestration"
   }
 }
