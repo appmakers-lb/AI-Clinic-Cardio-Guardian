@@ -1,0 +1,75 @@
+<Window x:Class="AIClinic.CardioGuardian.Desktop.ManualFindingWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Manual Research Annotation"
+        Height="560" Width="520"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Background="#3B2510" BorderBrush="#B7791F" BorderThickness="1" CornerRadius="6" Padding="10">
+            <TextBlock Text="MANUAL RESEARCH ANNOTATION — this is a human label, not an AI diagnosis."
+                       TextWrapping="Wrap" FontWeight="Bold" Foreground="#FDE68A"/>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="0,14,0,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="140"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Text="Vessel" Margin="0,8"/>
+            <ComboBox x:Name="VesselBox" Grid.Row="0" Grid.Column="1" SelectedIndex="1">
+                <ComboBoxItem Content="LM"/><ComboBoxItem Content="LAD"/><ComboBoxItem Content="LCx"/><ComboBoxItem Content="RCA"/>
+            </ComboBox>
+
+            <TextBlock Grid.Row="1" Text="Segment" Margin="0,8"/>
+            <ComboBox x:Name="SegmentBox" Grid.Row="1" Grid.Column="1" SelectedIndex="1">
+                <ComboBoxItem Content="main"/><ComboBoxItem Content="proximal"/><ComboBoxItem Content="mid"/><ComboBoxItem Content="distal"/>
+            </ComboBox>
+
+            <TextBlock Grid.Row="2" Text="Finding type" Margin="0,8"/>
+            <ComboBox x:Name="FindingTypeBox" Grid.Row="2" Grid.Column="1" SelectedIndex="0">
+                <ComboBoxItem Content="suspected_stenosis"/>
+                <ComboBoxItem Content="suspected_occlusion"/>
+                <ComboBoxItem Content="suspected_calcification"/>
+                <ComboBoxItem Content="other_research_observation"/>
+            </ComboBox>
+
+            <TextBlock Grid.Row="3" Text="Confidence (0-100)" Margin="0,8"/>
+            <TextBox x:Name="ConfidenceBox" Grid.Row="3" Grid.Column="1" Text="90" VerticalContentAlignment="Center" Height="36"/>
+
+            <TextBlock Grid.Row="4" Text="Priority" Margin="0,8"/>
+            <ComboBox x:Name="PriorityBox" Grid.Row="4" Grid.Column="1" SelectedIndex="2">
+                <ComboBoxItem Content="Information"/>
+                <ComboBoxItem Content="Review"/>
+                <ComboBoxItem Content="HighPriorityReview"/>
+            </ComboBox>
+
+            <TextBlock Grid.Row="5" Text="Source cine" Margin="0,8"/>
+            <TextBox x:Name="SourceBox" Grid.Row="5" Grid.Column="1" IsReadOnly="True" Height="36"/>
+
+            <TextBlock Grid.Row="6" Text="Frame" Margin="0,8"/>
+            <TextBox x:Name="FrameBox" Grid.Row="6" Grid.Column="1" IsReadOnly="True" Height="36"/>
+
+            <TextBlock Grid.Row="7" Text="Note / why" Margin="0,8"/>
+            <TextBox x:Name="ExplanationBox" Grid.Row="7" Grid.Column="1" Height="72" TextWrapping="Wrap"
+                     AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
+        </Grid>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Cancel" Click="Cancel_Click" MinWidth="90"/>
+            <Button Style="{StaticResource PrimaryButton}" Content="Add Research Annotation" Click="Add_Click" MinWidth="190"/>
+        </StackPanel>
+    </Grid>
+</Window>

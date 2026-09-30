@@ -1,0 +1,2418 @@
+AI CLINIC — MASTER ROADMAP
+Version: 2026-09-29 — V2
+Project Direction: AI Clinic ecosystem with two operationally separate products:
+1) AI Clinic Assistant (phone/WhatsApp/clinic workflow)
+2) AI Clinic Cardio Guardian (hospital/Cath-Lab physician assistant)
+Shared only through a controlled AI Clinic Core layer.
+
+======================================================================
+0. CORE PRODUCT VISION
+======================================================================
+
+AI Clinic is NOT meant to be only a database, patient-history viewer, or chatbot.
+
+The long-term product is a physician AI assistant that can:
+- help the doctor before the consultation or procedure,
+- help during the consultation,
+- help during cardiac imaging and interventional procedures,
+- monitor new results and follow-up tasks,
+- communicate by text and voice,
+- answer the doctor’s questions,
+- prepare drafts and summaries,
+- flag important findings that may have been missed,
+- NEVER make the final medical decision instead of the physician.
+
+The doctor always remains responsible for:
+- diagnosis,
+- treatment decision,
+- whether to proceed,
+- whether to stop,
+- whether to open or not open a vessel,
+- which procedural approach to use,
+- medication changes,
+- signing medical documents,
+- final approval of any clinical action.
+
+AI Clinic’s role:
+DETECT -> HIGHLIGHT -> EXPLAIN -> ALERT -> ANSWER -> DOCUMENT -> FOLLOW UP
+
+Physician’s role:
+REVIEW -> DECIDE -> APPROVE -> ACT
+
+
+======================================================================
+1. NON-NEGOTIABLE PRODUCT RULES
+======================================================================
+
+1. The AI is an ASSISTANT, not an autonomous doctor.
+2. No autonomous catheter movement, stent placement, procedure execution, or treatment.
+3. Clinical findings must be presented as:
+   - suspected,
+   - possible,
+   - high/medium/low confidence,
+   - or requiring physician review,
+   unless confirmed by an approved/validated clinical algorithm and physician.
+4. Any important clinical alert must show WHY the AI raised it.
+5. The doctor must be able to dismiss, confirm, or investigate any AI alert.
+6. AI must never hide uncertainty.
+7. AI must not invent findings when image quality is insufficient.
+8. If image quality is poor, say:
+   "Image quality insufficient for reliable assessment."
+9. Every clinical AI result must be logged for audit.
+10. The doctor can override the AI at any time.
+11. Voice alerts must never replace the visual alert.
+12. Voice alerts must be concise and non-distracting in the Cath Lab.
+13. Voice Q&A must support hands-free use where clinically appropriate.
+14. High-risk modules require clinical validation before real patient use.
+15. The initial deployment can use research / simulation / retrospective data before live clinical deployment.
+
+
+======================================================================
+2. PRODUCT FAMILY / OPERATIONAL SEPARATION — V2 LOCKED ARCHITECTURE
+======================================================================
+
+AI CLINIC ECOSYSTEM
+|
++-- AI CLINIC CORE
+|   +-- Identity / authentication
+|   +-- Permissions
+|   +-- Patient-ID mapping
+|   +-- Approved report exchange
+|   +-- Audit metadata
+|
++-- PRODUCT A: AI CLINIC ASSISTANT
+|   +-- Doctor App / Dashboard
+|   +-- AI Receptionist
+|   +-- Phone fallback
+|   +-- WhatsApp fallback
+|   +-- Unified Doctor Inbox
+|   +-- Patient Request / Document Workflow
+|   +-- Scheduling / Follow-Up
+|   +-- Doctor approval / human takeover
+|
++-- PRODUCT B: AI CLINIC CARDIO GUARDIAN
+    +-- Hospital workstation / appliance
+    +-- Cardiology Workspace
+    +-- Recorded / live Angiography AI
+    +-- Vessel / lesion / QCA engine
+    +-- Whole-case coronary memory
+    +-- Coverage Guardian
+    +-- Guardian Mode
+    +-- Cath-Lab Copilot
+    +-- Voice Assistant / Procedure Q&A
+    +-- IVUS/OCT/FFR integration
+    +-- Pre/Post Procedure Assistant
+    +-- Remote Second-Cardiologist Mode
+
+LOCKED ARCHITECTURE RULE:
+AI Clinic Assistant and AI Clinic Cardio are NOT one executable and NOT one
+runtime. A failure of one must never affect the other. Cardio time-critical
+inference should be local/on-prem where feasible and must not depend on the
+clinic communications backend being online.
+
+
+======================================================================
+3. EXISTING AI CLINIC DIRECTION
+======================================================================
+
+The original AI Clinic concept remains valid.
+
+PATIENT SIDE:
+- No dedicated patient app required initially.
+- Patient uses normal telephone / WhatsApp.
+- AI answers when doctor is unavailable, busy, or after configured fallback.
+- AI collects patient request and relevant details.
+- AI can receive document requests.
+- AI can prepare drafts.
+- AI can escalate urgent or medical decisions to doctor.
+- AI does NOT independently approve medical decisions.
+
+DOCTOR SIDE:
+- Doctor-only application/dashboard initially.
+- Unified Doctor Inbox.
+- Notifications.
+- Review / approve / reject workflow.
+- Human takeover.
+- Availability status.
+- Patient request queue.
+- Medical document draft review.
+- AI-generated summaries.
+- Conversation and action history.
+
+SERVER SIDE:
+- FastAPI backend.
+- Continuous server-side AI / worker.
+- Doctor does not need to keep the application open for backend processing.
+- Secure provider integrations.
+- Auditable actions.
+
+WHATSAPP:
+- Official WhatsApp integration.
+- Each doctor connects their own professional WhatsApp Business number.
+- Patient remains on WhatsApp; no patient app necessary.
+- AI Clinic remains separate from unrelated existing Meta/Instagram assets.
+
+CURRENT DEVELOPMENT BASE ALREADY ESTABLISHED:
+- FastAPI backend exists.
+- pytest-based validation has been used successfully.
+- receptionist/message endpoint work has already started.
+- doctor.html / doctor UI work has started.
+- Unified Doctor Inbox has been added/started.
+- WhatsApp integration is part of the roadmap.
+- Approval-required workflow already exists conceptually.
+- Previous work included server-side worker/fallback logic.
+- Real Meta/Twilio credentials and HTTPS webhook are deployment requirements where applicable.
+
+
+======================================================================
+4. ORIGINAL CLINIC WORKFLOW
+======================================================================
+
+PATIENT
+   |
+   +--> Phone
+   |
+   +--> WhatsApp
+          |
+          v
+AI RECEPTIONIST
+   |
+   +--> Identify request
+   +--> Gather details
+   +--> Determine urgency category
+   +--> Request missing documents
+   +--> Draft response/document
+   |
+   v
+UNIFIED DOCTOR INBOX
+   |
+   +--> Doctor reviews
+   +--> Doctor approves / edits / rejects
+   +--> Doctor can take over conversation
+   |
+   v
+FINAL ACTION
+   |
+   +--> Patient reply
+   +--> Appointment
+   +--> Signed document
+   +--> Follow-up task
+   +--> Escalation
+
+
+======================================================================
+5. CLINICAL COPILOT — GENERAL
+======================================================================
+
+The general Clinical Copilot is more than a database.
+
+It should:
+- read patient clinical information,
+- correlate results,
+- compare old vs new findings,
+- identify relevant changes,
+- summarize the patient before consultation,
+- answer physician questions,
+- show evidence behind an answer,
+- flag potentially important abnormalities,
+- prepare notes,
+- prepare follow-up tasks.
+
+Example doctor questions:
+- "What changed since the last visit?"
+- "Why was this patient flagged?"
+- "Show me the abnormal results."
+- "Compare the last two echoes."
+- "What medication changed?"
+- "What still needs follow-up?"
+- "Summarize this patient in 30 seconds."
+
+The patient history/database is SUPPORTING CONTEXT.
+It is NOT the main innovation.
+
+
+======================================================================
+6. AI CLINIC CARDIO — MAIN STRATEGIC DIRECTION
+======================================================================
+
+AI Clinic Cardio is the major advanced medical direction.
+
+PRIMARY GOAL:
+Create a real-time AI ASSISTANT for cardiologists, especially during:
+- coronary angiography,
+- cardiac catheterization,
+- PCI,
+- IVUS,
+- OCT,
+- FFR/iFR-supported procedures,
+- cardiac imaging review.
+
+The AI watches the same medical images/data that the physician is reviewing.
+
+The AI should be capable of detecting or flagging possible:
+- coronary stenosis,
+- severe stenosis,
+- total occlusion / suspected CTO,
+- suspicious vessel segment,
+- calcification,
+- bifurcation involvement,
+- abnormal flow pattern,
+- vessel narrowing,
+- possible missed lesion,
+- other image-derived procedural concerns as supported by validated models.
+
+It should then:
+1. highlight the area visually,
+2. produce a text alert,
+3. produce a short voice alert,
+4. allow the physician to ask follow-up questions,
+5. explain what it detected,
+6. show confidence,
+7. show which frame/view triggered the alert,
+8. compare with other available views,
+9. recommend review, NOT command the physician.
+
+
+======================================================================
+7. LIVE CATH-LAB COPILOT — TARGET EXPERIENCE
+======================================================================
+
+LIVE INPUT:
+Angiography / fluoroscopy / IVUS / OCT / physiology data
+        |
+        v
+REAL-TIME IMAGE PIPELINE
+        |
+        v
+MEDICAL COMPUTER-VISION MODEL
+        |
+        +--> Vessel identification
+        +--> Lesion detection
+        +--> Stenosis detection
+        +--> Occlusion suspicion
+        +--> Geometry
+        +--> Calcification
+        +--> Bifurcation
+        +--> Flow-related analysis where validated
+        |
+        v
+STRUCTURED CLINICAL FINDINGS
+        |
+        v
+CARDIO COPILOT REASONING LAYER
+        |
+        +--> Visual overlay
+        +--> Text alert
+        +--> Voice alert
+        +--> Doctor Q&A
+        +--> Evidence / explanation
+        |
+        v
+CARDIOLOGIST
+        |
+        +--> Reviews finding
+        +--> Decides what to do
+        +--> Continues / changes / ignores / investigates
+
+
+======================================================================
+8. EXAMPLE LIVE ALERTS
+======================================================================
+
+VOICE + TEXT ALERT EXAMPLE:
+
+"Doctor, possible severe stenosis detected in the mid-LAD.
+The segment is highlighted on screen."
+
+Another example:
+
+"Possible total occlusion detected in the RCA.
+Distal vessel filling may be visible.
+Please review the highlighted region."
+
+Another example:
+
+"Possible significant calcification detected before the target lesion."
+
+Another example after intervention:
+
+"Possible residual narrowing detected near the distal stent edge.
+Review IVUS or OCT if clinically appropriate."
+
+IMPORTANT:
+The AI should NOT say:
+"You must go through this vessel."
+"You must open this artery."
+"Place a stent here."
+"Do not use this approach."
+
+Instead:
+"Possible alternative route is visible."
+"Review this segment before proceeding."
+"Current imaging suggests..."
+"Consider reviewing the alternate approach."
+"Additional IVUS/OCT/physiology assessment may be useful."
+
+Doctor decides.
+
+
+======================================================================
+9. VOICE ASSISTANT INSIDE THE CATH LAB
+======================================================================
+
+Voice is a CORE user-interface feature, not the diagnostic engine.
+
+The diagnostic engine must work reliably first.
+
+VOICE CAPABILITIES:
+
+A. Proactive alerts
+- Short.
+- Clear.
+- Non-distracting.
+- Only for clinically meaningful findings.
+- Avoid constant talking.
+
+B. Doctor questions
+Examples:
+
+Doctor:
+"AI, where is the suspected blockage?"
+
+AI:
+"Mid-LAD. Highlighted in yellow on the current frame."
+
+Doctor:
+"How confident are you?"
+
+AI:
+"High confidence for significant narrowing on the current view.
+I recommend confirmation on another projection."
+
+Doctor:
+"Do you see another suspicious area?"
+
+AI:
+"One additional moderate narrowing is suspected in the proximal RCA.
+It is now highlighted."
+
+Doctor:
+"Compare it with the previous angiogram."
+
+AI:
+"The current segment appears more narrowed than in the previous study."
+
+Doctor:
+"Why did you alert me?"
+
+AI:
+"Because vessel diameter decreases markedly over this segment across two
+angiographic frames."
+
+C. Commands
+- "Show lesion."
+- "Hide overlay."
+- "Replay last alert."
+- "Show RCA."
+- "Show LAD."
+- "Compare previous study."
+- "Mute voice alerts."
+- "Show only high-confidence alerts."
+
+D. Language
+Long-term:
+- English.
+- Arabic.
+- Lebanese Arabic voice interaction where useful.
+- Medical terminology can remain in English where preferred by the physician.
+
+
+======================================================================
+10. VISUAL CATH-LAB INTERFACE
+======================================================================
+
+MAIN SCREEN:
+
+-------------------------------------------------------------
+| LIVE ANGIOGRAPHY / IMAGING                                |
+|                                                           |
+|   Vessel overlay                                          |
+|   Highlighted suspicious lesion                           |
+|   Vessel label: LAD / RCA / LCx                           |
+|   Confidence indicator                                    |
+|                                                           |
+-------------------------------------------------------------
+| AI FINDINGS                                               |
+| Possible severe stenosis — Mid LAD                        |
+| Confidence: High                                          |
+| Seen in: View 2 + View 4                                  |
+| [Show] [Compare] [Explain] [Dismiss]                      |
+-------------------------------------------------------------
+| VOICE / QUESTION BAR                                      |
+| "Ask Cardio AI..."                                        |
+-------------------------------------------------------------
+
+SIDE PANEL:
+- Current finding.
+- Lesion location.
+- Confidence.
+- Evidence.
+- Current frame.
+- Alternative views.
+- Previous study comparison.
+- IVUS/OCT/FFR data if connected.
+- Alert history.
+
+OPTIONAL:
+- Procedure timeline.
+- Before/after comparison.
+- Stent placement review.
+- Final procedure summary.
+
+
+======================================================================
+11. CARDIOLOGY WORKSPACE — SUPPORTING MODULES
+======================================================================
+
+These features remain useful, but they support the Live Cardio Copilot.
+
+A. CARDIO TIMELINE
+- Previous PCI.
+- Previous stents.
+- Previous MI.
+- Echo.
+- ECG.
+- Angiography.
+- CT.
+- MRI.
+- Labs.
+- Medication history.
+
+B. PRE-PROCEDURE BRIEF
+AI prepares a concise briefing:
+- allergies,
+- anticoagulants,
+- kidney function,
+- creatinine/eGFR,
+- previous stents,
+- previous angiography,
+- previous CABG,
+- EF,
+- important labs,
+- previous complications,
+- relevant imaging.
+
+C. ECG ASSISTANT
+Initial:
+- ingest report.
+Later:
+- raw ECG signal analysis using validated model.
+
+D. ECHO ASSISTANT
+Initial:
+- ingest report / structured values.
+Later:
+- DICOM / video analysis using validated echo model.
+
+E. LABS
+- Troponin.
+- LDL / HDL.
+- HbA1c.
+- Creatinine / eGFR.
+- Potassium.
+- Sodium.
+- other relevant cardiac labs.
+
+F. MEDICATION INTELLIGENCE
+- current medicines,
+- changes,
+- duplicate medications,
+- relevant interactions,
+- guideline support,
+- physician review required.
+
+G. CARDIAC IMAGING
+- CT coronary.
+- MRI.
+- Echo.
+- Angiography.
+- IVUS.
+- OCT.
+
+
+======================================================================
+12. TECHNICAL ARCHITECTURE
+======================================================================
+
+DO NOT BUILD:
+General LLM -> Raw Angiography -> Diagnosis
+
+BUILD:
+
+MEDICAL IMAGE / SIGNAL INPUT
+        |
+        v
+VALIDATED MEDICAL MODEL(S)
+        |
+        v
+STRUCTURED FINDINGS
+        |
+        +--> Vessel
+        +--> Segment
+        +--> Lesion
+        +--> Estimated severity
+        +--> Confidence
+        +--> Frame references
+        +--> Image quality
+        |
+        v
+CLINICAL RULES / GUIDELINES / CONTEXT
+        |
+        v
+LLM / CARDIO COPILOT
+        |
+        +--> explanation
+        +--> voice response
+        +--> physician Q&A
+        +--> summary
+        +--> structured note
+        |
+        v
+PHYSICIAN REVIEW
+
+
+COMPONENTS:
+
+1. Data Ingestion Layer
+2. DICOM / video / image pipeline
+3. Real-time frame processing
+4. Vessel segmentation model
+5. Lesion / stenosis model
+6. Occlusion / CTO suspicion model
+7. Confidence and quality model
+8. Multi-view correlation engine
+9. IVUS/OCT integration
+10. Physiology integration
+11. Clinical context engine
+12. LLM reasoning/explanation layer
+13. Voice STT
+14. Voice TTS
+15. Doctor dashboard
+16. Audit engine
+17. Authentication/authorization
+18. Clinical validation logging
+
+
+======================================================================
+13. REAL-TIME PERFORMANCE TARGETS
+======================================================================
+
+The system should be designed for:
+- low-latency visual overlay,
+- stable processing,
+- no blocking of Cath Lab imaging equipment,
+- graceful failure,
+- visible system status,
+- image-quality warnings,
+- alert prioritization.
+
+If AI is unavailable:
+- Cath Lab continues normally.
+- Procedure must never depend on AI being online.
+
+If model confidence is too low:
+- do not produce a strong alert.
+
+If data feed disconnects:
+- clearly display:
+  "AI IMAGE FEED UNAVAILABLE"
+
+Never pretend live analysis is working if it is not.
+
+
+======================================================================
+14. ALERT PRIORITY DESIGN
+======================================================================
+
+LEVEL 1 — INFORMATION
+Example:
+"Additional moderate narrowing suspected."
+
+LEVEL 2 — REVIEW
+Example:
+"Possible severe stenosis detected."
+
+LEVEL 3 — HIGH-PRIORITY REVIEW
+Example:
+"Possible total occlusion detected.
+Please review highlighted segment."
+
+Alerts must be configurable.
+
+Do NOT create alarm fatigue.
+
+Voice should normally be reserved for:
+- high-confidence,
+- high-importance,
+- physician-configured categories.
+
+
+======================================================================
+15. DOCTOR INTERACTION MODEL
+======================================================================
+
+Doctor controls:
+- Voice ON/OFF.
+- Mute.
+- Text-only mode.
+- High-confidence alerts only.
+- Show all findings.
+- Hide overlay.
+- Ask question.
+- Confirm finding.
+- Dismiss finding.
+- Mark false positive.
+- Add note.
+
+Every interaction helps later model evaluation.
+
+Example:
+AI detects lesion.
+Doctor dismisses it.
+System stores:
+- AI finding,
+- confidence,
+- relevant frames,
+- physician response,
+- final procedure result where available.
+
+This becomes highly valuable validation data.
+
+
+======================================================================
+16. PROCEDURE PHASES
+======================================================================
+
+BEFORE PROCEDURE
+- Patient summary.
+- Previous angiograms.
+- Previous stents.
+- Allergies.
+- Kidney function.
+- medications / anticoagulants.
+- Echo / EF.
+- planned procedure.
+- important risks.
+
+DURING PROCEDURE
+- Live vessel detection.
+- Live lesion highlighting.
+- Possible stenosis.
+- Possible total occlusion.
+- Calcification.
+- Multi-view comparison.
+- Voice alerts.
+- Text alerts.
+- Doctor Q&A.
+- IVUS/OCT/FFR correlation.
+
+AFTER PROCEDURE
+- Before/after comparison.
+- Residual suspected stenosis.
+- Stent edge review where technically supported.
+- Procedure event timeline.
+- Draft report.
+- Findings needing follow-up.
+- Doctor signs/approves final report.
+
+
+======================================================================
+17. PRODUCT PHASE ROADMAP
+======================================================================
+
+----------------------------------------------------------------------
+PHASE 0 — FOUNDATION / SAFETY
+STATUS: IN PROGRESS / PARTIALLY BUILT
+----------------------------------------------------------------------
+
+GOALS:
+- FastAPI backend.
+- Database.
+- Authentication.
+- Doctor accounts.
+- Patient model.
+- Request model.
+- Audit log.
+- Approval states.
+- Secure configuration.
+- test suite.
+- logging.
+- error handling.
+
+RULE:
+No high-risk medical feature goes live without auditability.
+
+DELIVERABLE:
+Stable backend base for the full AI Clinic platform.
+
+
+----------------------------------------------------------------------
+PHASE 1 — INVISIBLE AI CLINIC / DOCTOR INBOX
+STATUS: PARTIALLY BUILT
+----------------------------------------------------------------------
+
+GOALS:
+- Unified Doctor Inbox.
+- Phone / WhatsApp intake.
+- Patient request collection.
+- AI receptionist.
+- AI summaries.
+- human takeover.
+- availability / unavailable workflow.
+- notifications.
+- draft responses.
+- approval/reject/edit workflow.
+- document request handling.
+- follow-up queue.
+
+PATIENT:
+No separate patient app.
+
+DOCTOR:
+One doctor-side app/dashboard.
+
+DELIVERABLE:
+Usable clinic assistant even before Cardio imaging AI is ready.
+
+
+----------------------------------------------------------------------
+PHASE 2 — CLINICAL COPILOT
+STATUS: PLANNED
+----------------------------------------------------------------------
+
+GOALS:
+- Patient medical timeline.
+- Labs.
+- medication list.
+- ECG reports.
+- Echo reports.
+- imaging reports.
+- AI summary before visit.
+- compare old/new results.
+- identify important changes.
+- physician question/answer.
+- evidence/source view.
+- draft clinical note.
+
+IMPORTANT:
+This is NOT only a database.
+The database is context for the Clinical Copilot.
+
+
+----------------------------------------------------------------------
+PHASE 3 — CARDIOLOGY WORKSPACE
+STATUS: PLANNED
+----------------------------------------------------------------------
+
+GOALS:
+- Cardio-specific patient view.
+- ECG section.
+- Echo section.
+- Cardiac labs.
+- CT/MRI.
+- Angiography history.
+- Stent history.
+- Previous PCI.
+- pre-procedure brief.
+- previous vs current comparison.
+- Ask Cardio AI.
+
+DELIVERABLE:
+Full cardiology-specific physician workspace.
+
+
+----------------------------------------------------------------------
+PHASE 4 — OFFLINE / RETROSPECTIVE ANGIOGRAPHY AI
+STATUS: RESEARCH + DEVELOPMENT
+----------------------------------------------------------------------
+
+DO NOT START WITH LIVE PATIENT PROCEDURES.
+
+First build using:
+- retrospective angiography video,
+- research datasets,
+- de-identified cases,
+- expert annotations.
+
+AI FUNCTIONS:
+- identify coronary tree,
+- LAD / RCA / LCx,
+- segment vessels,
+- detect possible narrowing,
+- detect possible occlusion,
+- highlight finding,
+- assign confidence,
+- identify low-quality images,
+- compare multiple views.
+
+DELIVERABLE:
+Upload/replay angiography -> AI overlays suspected lesions.
+
+PHYSICIAN VALIDATION:
+Cardiologists review AI output frame-by-frame.
+
+
+----------------------------------------------------------------------
+PHASE 5 — CARDIO VOICE COPILOT ON RECORDED CASES
+STATUS: PLANNED
+----------------------------------------------------------------------
+
+Add:
+- voice alerts,
+- physician voice questions,
+- AI voice answers,
+- visual + voice synchronization.
+
+Example:
+"Possible severe stenosis detected in mid-LAD."
+
+Doctor:
+"Show me."
+
+AI:
+Highlight lesion.
+
+Doctor:
+"Why?"
+
+AI:
+Explain image evidence.
+
+This phase is still on recorded/simulated cases before live use.
+
+
+----------------------------------------------------------------------
+PHASE 6 — SHADOW MODE IN CATH LAB
+STATUS: FUTURE / REQUIRES APPROVAL + VALIDATION
+----------------------------------------------------------------------
+
+The AI receives the live feed BUT DOES NOT influence care.
+
+AI:
+- analyzes,
+- records findings,
+- records what it would have alerted.
+
+Physicians:
+- perform procedure normally,
+- do not depend on AI.
+
+After procedure:
+Compare:
+- AI findings,
+- physician findings,
+- angiography report,
+- IVUS/OCT,
+- FFR/iFR,
+- final diagnosis.
+
+GOAL:
+Measure sensitivity, specificity, false alerts, missed lesions, latency,
+and image-quality limitations.
+
+This is a critical validation stage.
+
+
+----------------------------------------------------------------------
+PHASE 7 — LIVE CARDIO COPILOT
+STATUS: FUTURE / CLINICAL VALIDATION REQUIRED
+----------------------------------------------------------------------
+
+Once validated:
+
+LIVE:
+- image overlay,
+- text alerts,
+- voice alerts,
+- doctor questions,
+- AI answers,
+- confidence,
+- evidence,
+- comparison,
+- procedure timeline.
+
+DOCTOR FINAL DECISION:
+ALWAYS.
+
+
+----------------------------------------------------------------------
+PHASE 8 — IVUS / OCT / PHYSIOLOGY FUSION
+STATUS: FUTURE
+----------------------------------------------------------------------
+
+Fuse:
+- angiography,
+- IVUS,
+- OCT,
+- FFR,
+- iFR,
+- previous CT,
+- procedure context.
+
+AI can say:
+"Angiography suggests narrowing here.
+IVUS confirms significant plaque burden in the same segment."
+
+or:
+"Angiographic appearance is suspicious, but physiology does not currently
+support a functionally significant lesion."
+
+Physician interprets and decides.
+
+
+----------------------------------------------------------------------
+PHASE 9 — ADVANCED PCI / CTO COPILOT
+STATUS: FUTURE / HIGH-RISK
+----------------------------------------------------------------------
+
+Research features:
+- CTO recognition.
+- proximal/distal cap localization.
+- collateral visualization.
+- vessel course estimation.
+- complex lesion characterization.
+- bifurcation planning support.
+- comparison of possible procedural strategies.
+
+CRITICAL RULE:
+AI may present possibilities.
+AI may NOT autonomously choose the route or perform PCI.
+
+Example:
+"Distal vessel filling is visible through collateral circulation.
+An alternate approach may merit review."
+
+Not:
+"Use the retrograde approach."
+
+
+----------------------------------------------------------------------
+PHASE 10 — POST-PROCEDURE AI
+STATUS: FUTURE
+----------------------------------------------------------------------
+
+- Before/after image comparison.
+- possible residual narrowing.
+- suspected stent under-expansion where supported by appropriate imaging.
+- edge issues.
+- final structured procedure summary.
+- follow-up recommendations for physician review.
+- patient follow-up queue.
+
+
+----------------------------------------------------------------------
+PHASE 11 — CONTINUOUS CARDIOLOGY AGENT
+STATUS: FUTURE
+----------------------------------------------------------------------
+
+After the patient leaves:
+- monitor new results,
+- notify doctor of meaningful changes,
+- compare new Echo with old,
+- compare new ECG with old,
+- track required follow-up,
+- track requested imaging,
+- flag overdue tests,
+- create review tasks,
+- prepare doctor summary.
+
+The AI must not silently make clinical decisions.
+
+
+======================================================================
+18. DATA / AI DEVELOPMENT PLAN
+======================================================================
+
+STEP A:
+Build UI + workflow without pretending the AI model is clinically ready.
+
+STEP B:
+Collect legitimate research / licensed / de-identified data.
+
+STEP C:
+Get expert cardiologist annotations.
+
+STEP D:
+Train / integrate specialized computer-vision models.
+
+STEP E:
+Benchmark:
+- vessel segmentation accuracy,
+- lesion localization,
+- stenosis classification,
+- occlusion detection,
+- false positives,
+- false negatives,
+- latency.
+
+STEP F:
+External validation on data from another institution.
+
+STEP G:
+Retrospective clinician study.
+
+STEP H:
+Prospective shadow-mode study.
+
+STEP I:
+Regulatory and hospital approval.
+
+STEP J:
+Limited live clinical deployment.
+
+STEP K:
+Post-deployment monitoring.
+
+
+======================================================================
+19. CLINICAL VALIDATION METRICS
+======================================================================
+
+For every important model:
+- sensitivity,
+- specificity,
+- PPV,
+- NPV,
+- AUROC where appropriate,
+- lesion localization accuracy,
+- vessel-level accuracy,
+- patient-level accuracy,
+- false-alert rate,
+- missed-lesion rate,
+- latency,
+- robustness across imaging systems,
+- robustness across image angles,
+- robustness across institutions.
+
+Also measure:
+- does AI reduce missed findings?
+- does AI increase unnecessary alerts?
+- does it slow the physician?
+- does it distract the team?
+- does it improve review time?
+- do cardiologists trust its explanations?
+
+
+======================================================================
+20. SAFETY + REGULATORY TRACK
+======================================================================
+
+This is a separate mandatory workstream.
+
+The Cath-Lab AI is potentially medical-device software / SaMD.
+
+Required work:
+- intended-use definition,
+- risk classification,
+- clinical-risk analysis,
+- cybersecurity,
+- access control,
+- audit logs,
+- change control,
+- model versioning,
+- validation,
+- clinical evidence,
+- hospital approval,
+- regulatory strategy for target markets,
+- post-market monitoring where applicable.
+
+Do not market a research prototype as a validated diagnostic system.
+
+Every screen should clearly indicate the operational mode:
+
+RESEARCH MODE
+SHADOW MODE
+CLINICAL ASSIST MODE
+
+Never mix them.
+
+
+======================================================================
+21. PRIVACY + SECURITY
+======================================================================
+
+- Encrypt data in transit.
+- Encrypt sensitive stored data.
+- Strong physician authentication.
+- Role-based access.
+- Hospital user controls.
+- Audit every patient access.
+- Audit every AI result.
+- Audit every physician response.
+- Secure webhook/integration credentials.
+- No training on patient data without appropriate authorization.
+- De-identification for research where required.
+- Separate production data from research data.
+- Data retention rules.
+- Backup/recovery.
+- Incident logging.
+
+
+======================================================================
+22. AI EXPLAINABILITY
+======================================================================
+
+Every significant finding should support:
+
+WHAT:
+"Possible severe stenosis."
+
+WHERE:
+"Mid-LAD."
+
+WHY:
+"Marked reduction in apparent vessel diameter across two views."
+
+CONFIDENCE:
+"High."
+
+SOURCE:
+"Frames 221-245, LAO cranial view."
+
+NEXT:
+"Physician review."
+
+The physician should be able to tap:
+[WHY?]
+
+and see the evidence.
+
+Black-box alert with no explanation is not enough.
+
+
+======================================================================
+23. FAILURE-MODE DESIGN
+======================================================================
+
+Possible failure:
+- poor contrast,
+- overlapping vessels,
+- motion,
+- low frame rate,
+- image artifacts,
+- unusual anatomy,
+- previous CABG,
+- previous stents,
+- severe calcification,
+- incomplete acquisition,
+- device incompatibility,
+- network outage.
+
+AI must detect when it is outside its reliable operating conditions.
+
+Example:
+"Confidence reduced due to vessel overlap."
+
+Better to abstain than invent.
+
+
+======================================================================
+24. INTEGRATION STRATEGY
+======================================================================
+
+Short term:
+- uploaded files,
+- exported angiography videos,
+- DICOM,
+- structured reports.
+
+Medium term:
+- PACS integration,
+- DICOM worklist,
+- hospital EMR,
+- Cath Lab image export,
+- ECG devices,
+- Echo systems.
+
+Long term:
+- direct live feed integration with supported Cath Lab systems,
+- IVUS/OCT consoles,
+- physiology systems,
+- real-time synchronized multimodal analysis.
+
+Important:
+Do not interfere with the primary medical imaging system.
+AI should be an adjunct display / processing system.
+
+
+======================================================================
+25. MVP DEFINITION
+======================================================================
+
+AI CLINIC MVP:
+- doctor login,
+- Unified Doctor Inbox,
+- patient requests,
+- WhatsApp integration,
+- AI receptionist,
+- doctor approval,
+- patient timeline,
+- basic Clinical Copilot.
+
+AI CLINIC CARDIO MVP:
+NOT live Cath Lab yet.
+
+Cardio MVP should support:
+1. Upload a recorded coronary angiography clip.
+2. AI identifies main coronary vessels.
+3. AI highlights suspicious narrowing/occlusion.
+4. Show confidence.
+5. Doctor can ask:
+   "Where is the lesion?"
+6. AI highlights it.
+7. Doctor can ask:
+   "Why?"
+8. AI explains.
+9. AI can speak the alert.
+10. Doctor can confirm/dismiss.
+11. Every action is logged.
+
+This is the FIRST prototype worth demonstrating to a cardiologist.
+
+
+======================================================================
+26. PILOT STRATEGY
+======================================================================
+
+FIRST PILOT:
+Use recorded/de-identified angiography.
+
+Ask cardiologists to evaluate:
+- Did AI find the real lesion?
+- Did it miss anything?
+- Did it mark false lesions?
+- Was the voice useful?
+- Was the alert distracting?
+- Was the explanation useful?
+- Would they use it?
+- What information should appear during a procedure?
+- What should NEVER appear during a procedure?
+
+SECOND PILOT:
+Shadow-mode live Cath Lab.
+
+THIRD PILOT:
+Validated clinical assist mode.
+
+
+======================================================================
+27. BUSINESS POSITIONING
+======================================================================
+
+Do NOT position AI Clinic Cardio as:
+"AI replaces cardiologists."
+
+Position it as:
+
+"AI second set of eyes for the cardiologist."
+
+Core value:
+- help reduce overlooked findings,
+- rapidly highlight suspicious regions,
+- keep procedural information visible,
+- answer questions hands-free,
+- correlate multiple imaging/data sources,
+- provide an auditable second review.
+
+Possible product message:
+
+AI CLINIC CARDIO
+A Second Set of Eyes in the Cath Lab.
+
+Possible internal product name:
+AI Clinic Cardio Copilot.
+
+
+======================================================================
+28. LEBANON STRATEGY
+======================================================================
+
+Based on the work already discussed:
+- Lebanon has advanced cardiac catheterization centers.
+- Lebanon has hospitals using advanced cardiac imaging and some cardiac AI.
+- We have not identified public evidence of the exact full product concept:
+  live angiography analysis + highlighted lesion + text alert + voice alert +
+  conversational cardiology copilot.
+
+Therefore:
+Do NOT claim "first in Lebanon" until verified directly.
+
+Potential future research/pilot targets can include large centers with:
+- advanced interventional cardiology,
+- IVUS/OCT/FFR/CTO experience,
+- research capability,
+- interest in AI.
+
+The first hospital conversation should be positioned as:
+RESEARCH COLLABORATION / CLINICAL VALIDATION
+not as an already-approved clinical product.
+
+
+======================================================================
+29. DEVELOPMENT PRIORITY ORDER
+======================================================================
+
+PRIORITY 1
+Finish stable AI Clinic backend + doctor workflow.
+
+PRIORITY 2
+Finish Unified Doctor Inbox + approvals + WhatsApp workflow.
+
+PRIORITY 3
+Build Cardiology Workspace.
+
+PRIORITY 4
+Build recorded angiography viewer.
+
+PRIORITY 5
+Add vessel segmentation.
+
+PRIORITY 6
+Add lesion / stenosis / occlusion detection.
+
+PRIORITY 7
+Add visual overlays + confidence.
+
+PRIORITY 8
+Add physician Q&A.
+
+PRIORITY 9
+Add text alerts.
+
+PRIORITY 10
+Add voice alerts.
+
+PRIORITY 11
+Cardiologist retrospective testing.
+
+PRIORITY 12
+Improve model using expert feedback.
+
+PRIORITY 13
+Shadow-mode Cath Lab integration.
+
+PRIORITY 14
+Regulatory / hospital validation.
+
+PRIORITY 15
+Live Clinical Assist Mode.
+
+PRIORITY 16
+IVUS/OCT/FFR fusion.
+
+PRIORITY 17
+Advanced CTO / complex PCI copilot.
+
+
+======================================================================
+30. WHAT WE ARE NOT BUILDING
+======================================================================
+
+NOT:
+- autonomous doctor,
+- autonomous diagnosis without physician review,
+- autonomous catheter,
+- robotic PCI control,
+- automatic stent decision,
+- automatic treatment,
+- AI that tells the physician what they "must" do,
+- a database-only product,
+- a generic chatbot with no specialized medical models,
+- an LLM directly guessing from raw angiography with no validated vision layer.
+
+
+======================================================================
+31. FINAL PRODUCT DEFINITION
+======================================================================
+
+AI Clinic is a doctor-centered AI platform.
+
+Its highest-value Cardiology module becomes:
+
+AI CLINIC CARDIO COPILOT
+
+A real-time physician assistant that can:
+- watch cardiac imaging,
+- identify suspicious coronary findings,
+- highlight possible blocked/narrowed vessels,
+- alert the cardiologist with text and voice,
+- answer questions during the procedure,
+- explain why it raised an alert,
+- correlate angiography with prior imaging and patient context,
+- compare multiple views,
+- later correlate IVUS/OCT/FFR,
+- document what happened,
+- assist before, during, and after the procedure,
+- while the cardiologist ALWAYS retains final clinical authority.
+
+MASTER PRINCIPLE:
+
+"THE AI SEES, HIGHLIGHTS, WARNS, EXPLAINS AND ANSWERS.
+THE DOCTOR DECIDES."
+
+
+
+======================================================================
+32. GLOBAL COMPETITOR INTELLIGENCE — SEPTEMBER 2026
+======================================================================
+
+This section converts competitor research into product requirements.
+The goal is NOT to imitate proprietary implementations. The goal is to learn
+which workflows already work clinically and then build our own differentiated,
+validated implementation.
+
+---------------------------------------------------------------------
+32.1 MEDIPIXEL — MPXA / MPFFR
+---------------------------------------------------------------------
+
+PUBLICLY VERIFIED PRODUCT IDEAS:
+- AI-powered real-time QCA.
+- Automated vessel segmentation.
+- Automatic best-frame recommendation.
+- ROI quantification.
+- Centerline / vessel diameter / vessel length.
+- Stenosis percentage.
+- Multiple ROI analysis.
+- Vessel classification / automated calibration.
+- MPXA-2000 has U.S. FDA 510(k) clearance.
+- MPFFR adds 3D information and angiography-derived FFR.
+- MPFFR advertises automated analysis under 10 seconds.
+
+WHAT WE SHOULD ADOPT AS PRODUCT LESSONS:
+- automatic frame selection,
+- automatic vessel contouring,
+- measurements, not only visual circles,
+- extremely low-click workflow,
+- anatomy + physiology together.
+
+WHAT SHOULD DIFFERENTIATE US:
+- continuous Guardian Mode,
+- whole-case memory,
+- multi-view lesion identity,
+- Coverage Guardian,
+- evidence replay,
+- conversational voice,
+- multimodal disagreement engine,
+- remote second-cardiologist workflow.
+
+---------------------------------------------------------------------
+32.2 MEDHUB-AI — AUTOCATHFFR / AUTOCATHLLM
+---------------------------------------------------------------------
+
+PUBLICLY VERIFIED PRODUCT IDEAS:
+- Automated stenosis identification/classification.
+- Real-time stenosis tracking.
+- FFR result advertised in about 37 seconds.
+- Offline operating capability.
+- Pullback Pressure Gradient analysis.
+- AutoCathLLM publicly announced as a future clinical copilot for
+  interventional cardiologists.
+
+STRATEGIC NOTE:
+This is one of the closest competitors to our long-term Cath-Lab copilot vision.
+
+WHAT WE SHOULD ADOPT AS PRODUCT LESSONS:
+- hands-off workflow,
+- offline operation,
+- physiology integrated into procedural support,
+- conversational copilot as an expected future category.
+
+WHAT SHOULD DIFFERENTIATE US:
+- every answer linked to visual evidence,
+- explicit incomplete-coverage detection,
+- persistent case memory,
+- multi-view evidence,
+- IVUS/OCT/physiology fusion,
+- Guardian Mode focused on potentially missed findings.
+
+---------------------------------------------------------------------
+32.3 CATHWORKS / MEDTRONIC — FFRANGIO
+---------------------------------------------------------------------
+
+PUBLICLY VERIFIED PRODUCT IDEAS:
+- Whole coronary-tree physiology.
+- Multi-vessel approach.
+- FFR values along the coronary tree.
+- Pullback-style visualization.
+- Lesion sizing / procedural optimization tools.
+- Drug-free and wire-free workflow.
+- Large clinical evidence base.
+- CathWorks acquired by Medtronic in April 2026.
+
+WHAT WE SHOULD ADOPT AS PRODUCT LESSONS:
+- whole-tree thinking,
+- spatial physiology rather than one isolated number,
+- multi-vessel workflow,
+- planning/optimization tools.
+
+WHAT SHOULD DIFFERENTIATE US:
+- missed-finding Guardian,
+- conversational evidence review,
+- coverage completeness,
+- multi-view memory,
+- remote second opinion.
+
+---------------------------------------------------------------------
+32.4 PHILIPS / SPECTRAWAVE — HYPERVUE + X1-FFR
+---------------------------------------------------------------------
+
+PUBLICLY VERIFIED PRODUCT IDEAS:
+- DeepOCT + NIRS intravascular imaging.
+- Automated / AI-powered image analysis.
+- X1-FFR from a single angiogram.
+- Wire-free physiology.
+- Rapid workflow around roughly one minute.
+- Imaging + physiology on one platform.
+
+WHAT WE SHOULD ADOPT AS PRODUCT LESSONS:
+- combine imaging and physiology,
+- direct acquisition-to-analysis workflow,
+- plaque characterization can add value beyond lumen narrowing.
+
+WHAT SHOULD DIFFERENTIATE US:
+- continuous whole-case reasoning,
+- multi-view verification when available,
+- evidence-linked voice Q&A,
+- vendor-neutral design target.
+
+---------------------------------------------------------------------
+32.5 MEDIS QFR 3.0
+---------------------------------------------------------------------
+
+PUBLICLY VERIFIED PRODUCT IDEAS:
+- U.S. FDA cleared in 2025.
+- AI-assisted vessel selection.
+- Automatic end-diastolic frame selection.
+- Automatic pathline and contour detection.
+- Automatic lesion detection.
+- Physiology + morphology.
+- Two-view workflow.
+- Delta QFR / Residual QFR.
+- Diameter stenosis / MLD / reference diameter / lesion length.
+- PACS integration.
+- Physician can review and correct AI output.
+
+WHAT WE SHOULD ADOPT AS PRODUCT LESSONS:
+- physician correction is mandatory,
+- multi-view analysis,
+- PACS as first-class integration,
+- morphology + physiology in one workflow,
+- automate repetitive technical steps.
+
+WHAT SHOULD DIFFERENTIATE US:
+- continuous case memory,
+- Coverage Guardian,
+- proactive high-priority alerts,
+- voice + instant evidence replay,
+- cross-cine lesion tracking.
+
+---------------------------------------------------------------------
+32.6 PIE MEDICAL IMAGING — CAAS vFFR
+---------------------------------------------------------------------
+
+PUBLICLY VERIFIED PRODUCT IDEAS:
+- Wire-free / adenosine-free physiology.
+- Uses two standard angiograms plus aortic-root pressure.
+- 3D vessel reconstruction.
+- Pullback information.
+- Anatomical lesion measurements.
+- Fast Cath-Lab workflow.
+
+WHAT WE SHOULD ADOPT AS PRODUCT LESSONS:
+- 3D reconstruction,
+- anatomy and physiology linked spatially,
+- pullback visualization.
+
+WHAT SHOULD DIFFERENTIATE US:
+- continuous Guardian,
+- whole-case state,
+- voice reasoning,
+- coverage awareness,
+- multimodal conflict detection.
+
+---------------------------------------------------------------------
+32.7 ABBOTT — ULTREON 2.0
+---------------------------------------------------------------------
+
+PUBLICLY VERIFIED PRODUCT IDEAS:
+- AI-powered OCT analysis.
+- Dynamic angiography support.
+- OCT + physiology workflow.
+- Calcium/vessel assessment.
+- Pre-PCI planning support.
+- Post-PCI optimization / stent-assessment support.
+
+WHAT WE SHOULD ADOPT AS PRODUCT LESSONS:
+- AI should help before AND after treatment,
+- calcium/plaque matters,
+- post-PCI review is a valuable module,
+- intravascular imaging adds depth beyond angiography.
+
+WHAT SHOULD DIFFERENTIATE US:
+- angiography-first continuous Guardian,
+- cross-modality lesion identity,
+- voice explanation,
+- evidence replay,
+- vendor-neutral adapter architecture.
+
+---------------------------------------------------------------------
+32.8 PHILIPS — INTRASIGHT / INTRASIGHT PLUS / DYNAMIC CORONARY ROADMAP
+---------------------------------------------------------------------
+
+PUBLICLY VERIFIED PRODUCT IDEAS:
+- IVUS.
+- iFR / FFR.
+- Angiography co-registration.
+- Physiology mapped to angiography.
+- Virtual treatment/stent planning tools.
+- IntraSight Plus integrates diagnostic and treatment-planning tools.
+- Dynamic Coronary Roadmap creates a motion-compensated overlay on live
+  fluoroscopy.
+
+WHAT WE SHOULD ADOPT AS PRODUCT LESSONS:
+- co-registration,
+- synchronized multimodality,
+- table-side workflow,
+- motion-aware overlays,
+- workflow integration is as important as model accuracy.
+
+WHAT SHOULD DIFFERENTIATE US:
+- AI actively looks for potentially missed findings,
+- Guardian Mode across all cine runs,
+- conversational Q&A,
+- explicit uncertainty and coverage warnings,
+- whole-case memory.
+
+
+======================================================================
+33. COMPETITOR FEATURE SYNTHESIS — BUILD OUR OWN VERSION OF THE BEST IDEAS
+======================================================================
+
+FROM MEDIPIXEL:
+- frame recommendation,
+- vessel segmentation,
+- QCA,
+- lesion measurements,
+- fast automation.
+
+FROM MEDHUB:
+- no/low-touch workflow,
+- stenosis tracking,
+- offline operation,
+- physiology,
+- conversational-Cath-Lab direction.
+
+FROM CATHWORKS:
+- entire coronary-tree map,
+- multi-vessel physiology,
+- pullback-style spatial understanding.
+
+FROM SPECTRAWAVE:
+- imaging + physiology,
+- plaque characterization,
+- rapid direct workflow.
+
+FROM MEDIS:
+- multi-view analysis,
+- automatic phase/frame selection,
+- physician correction,
+- PACS workflow,
+- physiology + morphology.
+
+FROM CAAS vFFR:
+- 3D reconstruction,
+- anatomy + physiology linkage.
+
+FROM ABBOTT:
+- calcium intelligence,
+- pre/post PCI assistance,
+- stent-result review.
+
+FROM PHILIPS:
+- multimodal co-registration,
+- table-side workflow,
+- live roadmap overlays,
+- virtual planning.
+
+PRODUCT RULE:
+We copy the product lesson, not proprietary code/algorithms/UI.
+
+
+======================================================================
+34. OUR PRIMARY DIFFERENTIATOR — GUARDIAN MODE
+======================================================================
+
+Guardian Mode does NOT wait for the physician to manually select a lesion.
+
+It continuously observes each cine run and updates a case-level model.
+
+Guardian responsibilities:
+- watch every supported cine run,
+- detect potentially important findings,
+- track whether a finding persists across views,
+- build evidence before interrupting,
+- alert only when configured thresholds are met,
+- stay silent when evidence is weak,
+- explicitly say when assessment is incomplete.
+
+Example:
+"Persistent suspicious narrowing detected in the RCA across two views.
+Highlighted for review."
+
+The purpose is a SECOND SET OF EYES, not an autonomous decision maker.
+
+
+======================================================================
+35. WHOLE-CASE CORONARY MEMORY
+======================================================================
+
+The system maintains one evolving case map:
+
+LEFT MAIN
+LAD
+  - proximal
+  - mid
+  - distal
+  - diagonals
+LCx
+  - proximal
+  - OM branches
+  - distal
+RCA
+  - proximal
+  - mid
+  - distal
+  - PDA/PL branches
+
+For each supported segment, store:
+- views seen,
+- cine runs,
+- image quality,
+- confidence,
+- suspected lesion,
+- lesion identity,
+- measurements,
+- physiology if available,
+- IVUS/OCT evidence if available,
+- physician reviewed / not reviewed,
+- physician confirmed / dismissed,
+- pre/post intervention state.
+
+The AI must NOT treat each cine as an unrelated new patient/image.
+
+
+======================================================================
+36. COVERAGE GUARDIAN — KEY UNIQUE FEATURE
+======================================================================
+
+The AI tracks what it CAN and CANNOT evaluate confidently.
+
+Possible states:
+GREEN = adequately visualized.
+YELLOW = partial / overlapping / lower confidence.
+GRAY = not adequately assessed.
+
+Example:
+"Distal RCA assessment incomplete because of overlap and limited opacification."
+
+CRITICAL PRINCIPLE:
+"No significant finding detected" must never be presented as equivalent to
+"this segment has been adequately excluded" when visualization was incomplete.
+
+This is one of our most important differentiators.
+
+
+======================================================================
+37. MULTI-VIEW LESION IDENTITY ENGINE
+======================================================================
+
+Create persistent lesion objects across views.
+
+Example:
+LESION-01
+- Vessel: LAD
+- Segment: mid
+- Seen in Run 03 / Run 05 / Run 07
+- Confidence
+- QCA measurements
+- Physiology link
+- IVUS/OCT link
+- Physician status
+
+Goals:
+- recognize the same lesion from different projections,
+- link all evidence,
+- avoid duplicate alerts,
+- support before/after comparison,
+- make voice Q&A precise.
+
+
+======================================================================
+38. EVIDENCE BUNDLE — "SHOW ME WHY"
+======================================================================
+
+Every important alert should have an evidence bundle:
+- best frame,
+- short cine segment,
+- alternate view,
+- vessel contour,
+- lesion marker,
+- measurements,
+- confidence,
+- quality score,
+- supporting physiology/IVUS/OCT if available.
+
+Doctor:
+"Cardio, show me why."
+
+System:
+Immediately displays/replays the evidence bundle.
+
+Doctor:
+"Show the other view."
+
+System:
+Displays the linked projection.
+
+This should become a signature user experience.
+
+
+======================================================================
+39. VOICE COPILOT — EVIDENCE-GROUNDED ONLY
+======================================================================
+
+Voice is the user interface, NOT the diagnostic model.
+
+Doctor can ask:
+- Where is it?
+- Show me.
+- Why did you alert?
+- How confident?
+- Show the other view.
+- Anything else high-confidence?
+- Which segments are incomplete?
+- Compare before and after.
+- Mute low-priority alerts.
+
+Answers must be generated from structured case state and evidence.
+The conversational model must not invent a medical finding not present in the
+validated structured output.
+
+Language target:
+- English medical mode,
+- Arabic,
+- Lebanese Arabic commands,
+- mixed Arabic + English clinical terminology.
+
+
+======================================================================
+40. MULTIMODAL FUSION + DISAGREEMENT ENGINE
+======================================================================
+
+Future linked modalities:
+- angiography,
+- QCA,
+- angiography-derived physiology,
+- FFR/iFR,
+- IVUS,
+- OCT,
+- CT coronary,
+- previous angiography.
+
+Special feature:
+When modalities disagree, do not hide the disagreement.
+
+Examples:
+- angiography appears severe / physiology not significant,
+- angiography appears modest / IVUS shows important plaque burden,
+- AI current finding differs from previous study,
+- physician dismisses AI finding.
+
+Create a review card:
+"Discordant evidence — physician review recommended."
+
+
+======================================================================
+41. UNCERTAINTY + ABSTENTION ENGINE
+======================================================================
+
+The AI must be allowed to say:
+"I do not have enough evidence to assess this segment reliably."
+
+Possible reasons:
+- overlap,
+- poor opacification,
+- foreshortening,
+- motion,
+- artifact,
+- unsupported anatomy,
+- feed problem,
+- missing projection,
+- low model confidence.
+
+Abstention is a feature, not a failure.
+
+
+======================================================================
+42. OPTIONAL DIAGNOSTIC COMPLETENESS VIEW
+======================================================================
+
+At an appropriate review point, show:
+
+ASSESSED WELL:
+- LM
+- proximal/mid LAD
+- LCx
+
+INCOMPLETE:
+- distal RCA
+
+ACTIVE FINDINGS:
+- LESION-01 mid-LAD
+- LESION-02 proximal RCA
+
+The physician decides whether anything else is needed.
+The AI does not force acquisition or select the procedural route.
+
+
+======================================================================
+43. REMOTE SECOND-CARDIOLOGIST MODE
+======================================================================
+
+This directly reflects the real-world scenario that motivated the project.
+
+An authorized remote cardiologist may:
+- join on a second workstation,
+- see the same cine,
+- see AI overlays,
+- point to a vessel/segment,
+- annotate a frame,
+- communicate with the operating cardiologist under hospital policy.
+
+The system synchronizes the exact evidence and records the interaction.
+
+Strict requirements:
+- hospital authorization,
+- role-based access,
+- encryption,
+- audit log,
+- no uncontrolled consumer screen-sharing workflow.
+
+
+======================================================================
+44. LEBANON — VERIFIED PUBLIC MARKET LANDSCAPE AS OF 2026-09-29
+======================================================================
+
+IMPORTANT DISTINCTION:
+A product shown on a Lebanon-facing vendor website does NOT prove that a
+specific Lebanese hospital has installed it.
+
+PUBLICLY VERIFIED:
+
+PHILIPS LEBANON:
+Official Lebanon pages show/market:
+- IntraSight,
+- IVUS,
+- iFR/FFR,
+- co-registration,
+- Azurion,
+- Dynamic Coronary Roadmap.
+
+This proves Lebanon-facing commercial/support presence for those technologies,
+not a named installation.
+
+CLEMENCEAU MEDICAL CENTER:
+Publicly describes AI-enhanced cardiac CT/MRI capabilities.
+This is cardiovascular AI, but not our complete live Cath-Lab Guardian concept.
+
+LAU:
+Publicly lists an AI-powered ECG/OMI prospective implementation pilot and
+retrospective validation work.
+This is cardiac AI, not a live angiography Guardian.
+
+HÔTEL-DIEU DE FRANCE:
+Publicly lists:
+- coronary angiography,
+- PCI,
+- FFR,
+- IVUS,
+- CTO treatment.
+
+AL ZAHRAA UNIVERSITY MEDICAL CENTER:
+Publicly lists:
+- complex PCI / CTO capability,
+- IVUS,
+- FFR,
+- rotablation.
+
+SAINT GEORGE UNIVERSITY MEDICAL CENTER:
+Publicly lists:
+- PCI / stenting,
+- thrombectomy,
+- Rotablator,
+- IVUS,
+- FFR.
+
+AUBMC:
+Has long-standing advanced cardiac/interventional infrastructure and published
+use of FFR, though this does not establish one of the named AI systems below.
+
+NOT PUBLICLY VERIFIED BY THIS SEARCH AS A NAMED LEBANESE HOSPITAL INSTALLATION:
+- CathWorks FFRangio,
+- Medipixel MPXA,
+- Medipixel MPFFR,
+- MedHub AutoCathFFR,
+- SpectraWAVE X1-FFR / HyperVue,
+- Medis QFR 3.0,
+- CAAS vFFR,
+- our complete Guardian + voice + whole-case concept.
+
+CONCLUSION:
+Do NOT claim "first in Lebanon" until direct vendor/hospital verification.
+
+
+======================================================================
+45. LEBANON DIRECT-VERIFICATION PLAN
+======================================================================
+
+1. PHILIPS LEBANON
+Ask:
+- which hospitals have IntraSight?
+- which have Dynamic Coronary Roadmap?
+- which have Azurion cath-lab suites?
+- which have IVUS/iFR co-registration?
+
+2. MEDTRONIC REGIONAL/LEBANON
+Ask:
+- CathWorks FFRangio commercial availability?
+- registration status?
+- installed sites?
+
+3. ABBOTT
+Ask:
+- Ultreon 2.0 / OCT installations?
+
+4. MEDIS / PIE MEDICAL / MEDIPIXEL / MEDHUB / PHILIPS-SPECTRAWAVE
+Ask:
+- Lebanon distribution,
+- registration,
+- installations,
+- clinical demos,
+- integration requirements.
+
+5. HOSPITAL VERIFICATION
+Potential institutions to contact:
+- AUBMC,
+- LAU Medical Center,
+- Hôtel-Dieu,
+- CMC,
+- Saint George,
+- Al Zahraa,
+- other high-volume PCI centers.
+
+Do not publish installation claims until verified directly.
+
+
+======================================================================
+46. REVISED CARDIO EXECUTION ROADMAP — V2
+======================================================================
+
+PHASE C0 — COMPETITOR BASELINE + INTENDED-USE SPEC
+- competitor matrix,
+- claims/evidence registry,
+- Lebanon verification registry,
+- user workflow interviews,
+- risk register,
+- Research Mode intended-use draft.
+
+PHASE C1 — RESEARCH DESKTOP VIEWER
+- Windows workstation prototype,
+- recorded angiography video,
+- DICOM/XA import where practical,
+- playback,
+- frame navigation,
+- manual annotation,
+- explicit RESEARCH MODE banner.
+
+PHASE C2 — VESSEL ENGINE
+- vessel segmentation,
+- centerline,
+- supported vessel classification,
+- quality score,
+- automatic best-frame suggestion.
+
+PHASE C3 — LESION + QCA ENGINE
+- lesion localization,
+- stenosis estimate,
+- lesion length,
+- reference diameter,
+- minimum lumen diameter,
+- physician correction tools.
+
+PHASE C4 — MULTI-VIEW CORRELATION
+- same-lesion tracking across views,
+- projection metadata,
+- lesion identity,
+- evidence bundle.
+
+PHASE C5 — WHOLE-CASE MEMORY + COVERAGE GUARDIAN
+- coronary tree state,
+- segment coverage,
+- incomplete visualization warnings,
+- reviewed/confirmed/dismissed status.
+
+PHASE C6 — GUARDIAN MODE
+- continuous recorded-case analysis,
+- persistent-finding logic,
+- alert prioritization,
+- missed-finding workflow,
+- alarm-fatigue controls.
+
+PHASE C7 — EVIDENCE COPILOT + VOICE
+- text Q&A,
+- "show me",
+- "show me why",
+- "other view",
+- confidence explanation,
+- STT/TTS,
+- bilingual command framework.
+
+PHASE C8 — PHYSIOLOGY RESEARCH MODULE
+- import FFR/iFR,
+- investigate angiography-derived physiology,
+- pullback visualization,
+- focal vs diffuse information.
+
+PHASE C9 — IVUS/OCT FUSION
+- modality import,
+- lesion co-registration research,
+- plaque/calcium context,
+- lumen measurements,
+- disagreement engine.
+
+PHASE C10 — POST-PCI REVIEW
+- before/after comparison,
+- unresolved findings,
+- stent-related review support where validated,
+- post-treatment physiology comparison.
+
+PHASE C11 — REMOTE SECOND-OPINION MODE
+- authenticated second cardiologist,
+- synchronized cine,
+- shared AI evidence,
+- annotations,
+- full audit.
+
+PHASE C12 — RETROSPECTIVE CARDIOLOGIST STUDY
+- de-identified historical cases,
+- compare AI vs clinical ground truth,
+- measure false alerts / missed lesions / usability.
+
+PHASE C13 — EXTERNAL / MULTICENTER VALIDATION
+- different hospital,
+- different X-ray vendor,
+- different acquisition styles,
+- domain-shift testing.
+
+PHASE C14 — SHADOW MODE
+- approved live-feed study,
+- AI records what it would have alerted,
+- care does not depend on AI,
+- post-case comparison.
+
+PHASE C15 — REGULATORY / CLINICAL ENGINEERING
+- intended use,
+- QMS,
+- cybersecurity,
+- human factors,
+- V&V,
+- clinical evidence,
+- change/model control,
+- hospital/regulatory approvals.
+
+PHASE C16 — LIMITED LIVE CLINICAL ASSIST
+Only after validation/approval:
+- visual Guardian,
+- text alerts,
+- configured voice alerts,
+- evidence replay,
+- physician Q&A,
+- coverage state,
+- validated multimodal context.
+
+PHASE C17 — ADVANCED CTO / COMPLEX PCI RESEARCH
+Potential future research:
+- CTO identification,
+- cap localization,
+- collateral visualization,
+- complex bifurcation characterization,
+- vessel-course estimation,
+- evidence display around procedural alternatives.
+
+The AI may present evidence and possibilities.
+The AI does NOT choose or execute the route.
+
+
+======================================================================
+47. FIRST DEMO WORTH SHOWING TO AN INTERVENTIONAL CARDIOLOGIST
+======================================================================
+
+INPUT:
+Recorded de-identified coronary angiography case.
+
+DEMO:
+1. Load case.
+2. AI segments coronary vessels.
+3. AI labels supported vessel/segment.
+4. AI marks a suspicious lesion.
+5. AI provides basic QCA measurements.
+6. The same lesion is linked to another view.
+7. Whole-case coronary map updates.
+8. Coverage panel shows adequately assessed vs incomplete segments.
+9. Guardian Mode raises ONE evidence-based high-value alert.
+10. AI speaks the alert.
+11. Doctor says: "Show me why."
+12. System replays evidence.
+13. Doctor says: "Other view."
+14. System opens linked projection.
+15. Doctor confirms/dismisses.
+16. Audit records the decision.
+
+This is a much stronger demo than a simple red circle around a lesion.
+
+
+======================================================================
+48. COMPETITIVE MOAT — WHAT WE SHOULD NOT COMPETE ON ALONE
+======================================================================
+
+DO NOT make our moat:
+"We calculate FFR too."
+
+Established systems already have regulatory clearances, clinical studies and
+commercial distribution.
+
+Our moat should be:
+1. Guardian Mode.
+2. Whole-case coronary memory.
+3. Coverage Guardian.
+4. Multi-view lesion identity.
+5. Evidence Bundle / instant replay.
+6. Voice conversational review.
+7. Multimodal disagreement engine.
+8. Vendor-neutral adapters.
+9. Local/offline critical inference.
+10. Remote second-cardiologist collaboration.
+11. Physician-feedback / audit learning loop.
+12. Arabic/Lebanese workflow adaptation where useful.
+
+
+======================================================================
+49. LOCAL / OFFLINE CRITICAL INFERENCE
+======================================================================
+
+Time-critical functions should preferably run on the hospital workstation:
+- video ingest,
+- quality assessment,
+- segmentation,
+- lesion tracking,
+- Guardian Mode,
+- visual overlay,
+- high-priority alert generation.
+
+Optional cloud/non-time-critical functions:
+- software/model updates,
+- licensing,
+- analytics,
+- approved report synchronization,
+- non-critical language/report services.
+
+If internet is down:
+- hospital imaging continues,
+- AI should either continue locally or clearly state AI unavailable,
+- it must never fake analysis.
+
+
+======================================================================
+50. PRODUCT NAMING — WORKING SET
+======================================================================
+
+ECOSYSTEM:
+AI Clinic
+
+COMMUNICATION PRODUCT:
+AI Clinic Assistant
+
+HOSPITAL/CARDIOLOGY PRODUCT:
+AI Clinic Cardio
+
+CORE CATH-LAB EXPERIENCE:
+AI Clinic Cardio Guardian
+
+CONVERSATIONAL LAYER:
+Cardio Copilot
+
+POSITIONING LINE:
+"A Second Set of Eyes in the Cath Lab."
+
+Do not market as:
+"AI Cardiologist" or autonomous doctor.
+
+
+======================================================================
+51. FINAL V2 PRODUCT DEFINITION
+======================================================================
+
+AI Clinic is an ecosystem, not one monolithic app.
+
+AI Clinic Assistant:
+Helps when patients call/message and the physician is unavailable.
+
+AI Clinic Cardio Guardian:
+Runs separately in the hospital/Cath Lab and is designed to become a
+physician-controlled, evidence-based second set of eyes.
+
+The Cardio system should eventually:
+- watch supported coronary imaging continuously,
+- understand the coronary tree,
+- remember prior cine runs,
+- identify suspicious lesions,
+- quantify when validated,
+- track lesions across views,
+- say when visualization is incomplete,
+- correlate anatomy and physiology,
+- integrate IVUS/OCT later,
+- highlight evidence,
+- alert visually,
+- alert by voice when appropriate,
+- answer physician questions,
+- replay why it alerted,
+- support a remote second cardiologist,
+- review before/after PCI,
+- maintain a complete audit trail.
+
+It should never:
+- decide treatment,
+- choose the route,
+- move the catheter,
+- deploy a stent,
+- replace the cardiologist.
+
+MASTER PRINCIPLE:
+
+"THE AI WATCHES, REMEMBERS, HIGHLIGHTS, WARNS, EXPLAINS AND ANSWERS.
+THE CARDIOLOGIST DECIDES."
+
+
+======================================================================
+END OF ROADMAP — V2
+======================================================================

@@ -1,0 +1,124 @@
+{
+  "master": "MASTER_AGENT",
+  "pattern": "manager-owned orchestration; specialists return bounded artifacts",
+  "agents": {
+    "A01": {
+      "file": "A01_COMPETITOR_PRODUCT.md",
+      "features": [
+        "competitor matrix",
+        "claims registry",
+        "Lebanon verification",
+        "differentiation"
+      ]
+    },
+    "A02": {
+      "file": "A02_WINDOWS_PLATFORM.md",
+      "features": [
+        "C#/.NET WPF shell",
+        "Visual Studio 2022 solution",
+        "packaging",
+        "config",
+        "workstation deployment"
+      ]
+    },
+    "A03": {
+      "file": "A03_IMAGING_DICOM.md",
+      "features": [
+        "cine/video ingest",
+        "DICOM/XA",
+        "metadata",
+        "PACS/feed adapters"
+      ]
+    },
+    "A04": {
+      "file": "A04_VESSEL_VISION.md",
+      "features": [
+        "segmentation",
+        "centerlines",
+        "vessel labels",
+        "quality/best-frame"
+      ]
+    },
+    "A05": {
+      "file": "A05_LESION_QCA.md",
+      "features": [
+        "lesion localization",
+        "stenosis/QCA",
+        "length/diameter",
+        "manual correction"
+      ]
+    },
+    "A06": {
+      "file": "A06_MULTIVIEW_MEMORY.md",
+      "features": [
+        "lesion identity",
+        "whole-case memory",
+        "cross-cine linkage",
+        "pre/post matching"
+      ]
+    },
+    "A07": {
+      "file": "A07_GUARDIAN_COVERAGE.md",
+      "features": [
+        "Guardian Mode",
+        "Coverage Guardian",
+        "alert scoring",
+        "abstention"
+      ]
+    },
+    "A08": {
+      "file": "A08_VOICE_COPILOT.md",
+      "features": [
+        "grounded Q&A",
+        "show me why",
+        "voice alerts",
+        "bilingual commands"
+      ]
+    },
+    "A09": {
+      "file": "A09_PHYSIOLOGY_FUSION.md",
+      "features": [
+        "FFR/iFR import",
+        "physiology research",
+        "IVUS/OCT fusion",
+        "contradiction cards"
+      ]
+    },
+    "A10": {
+      "file": "A10_HUMAN_FACTORS_UX.md",
+      "features": [
+        "Cath-Lab UX",
+        "alarm fatigue",
+        "table-side controls",
+        "remote second opinion"
+      ]
+    },
+    "A11": {
+      "file": "A11_SECURITY_REGULATORY.md",
+      "features": [
+        "RBAC",
+        "audit",
+        "mode separation",
+        "cybersecurity",
+        "traceability"
+      ]
+    },
+    "A12": {
+      "file": "A12_VALIDATION_QA.md",
+      "features": [
+        "tests",
+        "metrics",
+        "retrospective validation",
+        "external validation",
+        "regression gates"
+      ]
+    }
+  },
+  "current_sprint": "S1 C# Windows Foundation + DICOM/XA adapter contract",
+  "next_sprint": "S2 Research DICOM/XA ingest + manual evidence annotations",
+  "platform": {
+    "windows_app": "C#/.NET 8 WPF",
+    "ai_research": "Python/ONNX/TensorRT candidates",
+    "clinical_mode_enabled": false
+  }
+}

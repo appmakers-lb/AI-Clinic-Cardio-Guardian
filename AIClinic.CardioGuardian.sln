@@ -1,0 +1,36 @@
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AIClinic.CardioGuardian.Desktop", "src\AIClinic.CardioGuardian.Desktop\AIClinic.CardioGuardian.Desktop.csproj", "{88BC3DDF-BDEF-4DC8-8319-390DCDF0F75E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AIClinic.CardioGuardian.Core", "src\AIClinic.CardioGuardian.Core\AIClinic.CardioGuardian.Core.csproj", "{A57D4F92-58C0-4B64-9F67-D0732DE3E117}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AIClinic.CardioGuardian.Core.Tests", "tests\AIClinic.CardioGuardian.Core.Tests\AIClinic.CardioGuardian.Core.Tests.csproj", "{B7707116-74DB-40EA-B5F1-96252ED9BFBB}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{88BC3DDF-BDEF-4DC8-8319-390DCDF0F75E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{88BC3DDF-BDEF-4DC8-8319-390DCDF0F75E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{88BC3DDF-BDEF-4DC8-8319-390DCDF0F75E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{88BC3DDF-BDEF-4DC8-8319-390DCDF0F75E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A57D4F92-58C0-4B64-9F67-D0732DE3E117}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A57D4F92-58C0-4B64-9F67-D0732DE3E117}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A57D4F92-58C0-4B64-9F67-D0732DE3E117}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A57D4F92-58C0-4B64-9F67-D0732DE3E117}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B7707116-74DB-40EA-B5F1-96252ED9BFBB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B7707116-74DB-40EA-B5F1-96252ED9BFBB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B7707116-74DB-40EA-B5F1-96252ED9BFBB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B7707116-74DB-40EA-B5F1-96252ED9BFBB}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {A2117B87-6E79-4788-B164-2E4DC5B0A910}
+	EndGlobalSection
+EndGlobal

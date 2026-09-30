@@ -1,0 +1,8 @@
+# Local research gateway + DICOM preprocessing.
+fastapi
+uvicorn
+pydantic
+numpy
+pydicom
+opencv-python
+# Add torch/torchvision/onnx/onnxruntime-gpu only when a model sprint requires them.

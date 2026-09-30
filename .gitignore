@@ -1,0 +1,24 @@
+.vs/
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.log
+
+# Local AI / model files
+models/
+*.onnx
+*.pt
+*.pth
+
+# Patient / medical data — NEVER COMMIT
+patient_data/
+dicom_data/
+*.dcm
+DICOMDIR
+
+# Secrets
+.env
+appsettings.Local.json
+appsettings.Secrets.json

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <LangVersion>latest</LangVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AIClinic.CardioGuardian.Core\AIClinic.CardioGuardian.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="fo-dicom" Version="5.2.6" />
+    <PackageReference Include="fo-dicom.Imaging.Desktop" Version="5.2.6" />
+    <PackageReference Include="fo-dicom.Codecs" Version="5.16.7" />
+    <PackageReference Include="System.Speech" Version="10.0.12" />
+  </ItemGroup>
+</Project>

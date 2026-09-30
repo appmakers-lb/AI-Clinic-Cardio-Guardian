@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Clinic Cardio Guardian Structured Research Finding Package",
+  "type": "object",
+  "required": [
+    "modelId",
+    "modelVersion",
+    "findings"
+  ],
+  "properties": {
+    "modelId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "modelVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "caseId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "generatedAtUtc": {
+      "type": "string"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "vessel",
+          "segment",
+          "findingType",
+          "confidence",
+          "evidence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "vessel": {
+            "type": "string"
+          },
+          "segment": {
+            "type": "string"
+          },
+          "findingType": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "priority": {
+            "enum": [
+              "Silent",
+              "Information",
+              "Review",
+              "HighPriorityReview"
+            ]
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "measurementSummary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "sourceId",
+                "description"
+              ],
+              "properties": {
+                "sourceId": {
+                  "type": "string"
+                },
+                "frameStart": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                },
+                "frameEnd": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                },
+                "projection": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "description": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
