@@ -162,28 +162,41 @@ public sealed class DicomImportService
         {
             files = Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories);
         }
-        catch
+        catch (UnauthorizedAccessException)
+        {
+            files = Directory.EnumerateFiles(folder, "*", SearchOption.TopDirectoryOnly);
+        }
+        catch (IOException)
         {
             files = Directory.EnumerateFiles(folder, "*", SearchOption.TopDirectoryOnly);
         }
 
+        var knownNonDicomExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".exe", ".dll", ".bat", ".cmd", ".msi",
+            ".html", ".htm", ".css", ".js", ".json", ".xml", ".txt", ".pdf",
+            ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".ico",
+            ".mp4", ".avi", ".mov", ".wmv", ".mkv",
+            ".zip", ".7z", ".rar"
+        };
+
         foreach (var file in files)
         {
             var name = System.IO.Path.GetFileName(file);
-            if (name.Equals("DICOMDIR", StringComparison.OrdinalIgnoreCase) ||
-                System.IO.Path.GetExtension(file).Equals(".dcm", StringComparison.OrdinalIgnoreCase) ||
-                string.IsNullOrWhiteSpace(System.IO.Path.GetExtension(file)) ||
-                IsLikelyDicomByExtension(file))
+            if (name.Equals("DICOMDIR", StringComparison.OrdinalIgnoreCase))
             {
                 yield return file;
+                continue;
             }
-        }
-    }
 
-    private static bool IsLikelyDicomByExtension(string file)
-    {
-        var ext = System.IO.Path.GetExtension(file).ToLowerInvariant();
-        return ext is ".dicom" or ".ima" or ".dic" or ".img";
+            var extension = System.IO.Path.GetExtension(file);
+            if (knownNonDicomExtensions.Contains(extension))
+                continue;
+
+            // Real cath-lab media may use .dcm, .ima, no extension, numeric extensions,
+            // or vendor-specific names. Let fo-dicom perform the authoritative parse.
+            yield return file;
+        }
     }
 
     private static string SafeString(DicomDataset dataset, DicomTag tag)
