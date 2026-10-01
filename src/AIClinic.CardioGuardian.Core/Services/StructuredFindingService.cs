@@ -13,41 +13,113 @@ public sealed class StructuredFindingService
 
     public StructuredFindingPackage Parse(string json)
     {
-        var package = JsonSerializer.Deserialize<StructuredFindingPackage>(json, Options)
-            ?? throw new InvalidDataException("Structured finding package is empty or invalid JSON.");
+        if (string.IsNullOrWhiteSpace(json))
+            throw new InvalidDataException("Structured finding package is empty.");
+
+        StructuredFindingPackage package;
+        try
+        {
+            package = JsonSerializer.Deserialize<StructuredFindingPackage>(json, Options)
+                ?? throw new InvalidDataException("Structured finding package is empty or invalid JSON.");
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidDataException("Structured finding package contains invalid JSON.", ex);
+        }
 
         if (string.IsNullOrWhiteSpace(package.ModelId) || string.IsNullOrWhiteSpace(package.ModelVersion))
             throw new InvalidDataException("ModelId and ModelVersion are required.");
+
+        if (string.Equals(package.ModelId, "NO_MODEL", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("NO_MODEL output cannot be imported as a research-model finding package.");
+
+        if (package.Findings is null)
+            throw new InvalidDataException("Findings array is required.");
 
         return package;
     }
 
     public IReadOnlyList<GuardianFinding> ToGuardianFindings(StructuredFindingPackage package)
     {
+        ArgumentNullException.ThrowIfNull(package);
+
         var result = new List<GuardianFinding>();
+        var seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var item in package.Findings)
         {
-            if (!Enum.TryParse<FindingPriority>(item.Priority, true, out var priority))
-                priority = FindingPriority.Review;
-
-            var evidence = item.Evidence.Select(x => new EvidenceReference(
-                x.SourceId, x.FrameStart, x.FrameEnd, x.Projection, x.Description)).ToArray();
-
-            result.Add(new GuardianFinding
+            if (string.IsNullOrWhiteSpace(item.Id))
+                throw new InvalidDataException("Every structured finding requires an id.");
+            if (!seenIds.Add(item.Id))
+                throw new InvalidDataException($"Duplicate structured finding id '{item.Id}'.");
+            if (string.IsNullOrWhiteSpace(item.Vessel) ||
+                string.IsNullOrWhiteSpace(item.Segment) ||
+                string.IsNullOrWhiteSpace(item.FindingType))
             {
-                Id = item.Id,
-                Vessel = item.Vessel,
-                Segment = item.Segment,
-                FindingType = item.FindingType,
+                throw new InvalidDataException(
+                    $"Finding '{item.Id}' requires vessel, segment, and findingType.");
+            }
+
+            if (double.IsNaN(item.Confidence) ||
+                double.IsInfinity(item.Confidence) ||
+                item.Confidence is < 0 or > 1)
+            {
+                throw new InvalidDataException(
+                    $"Finding '{item.Id}' confidence must be between 0 and 1.");
+            }
+
+            if (item.Evidence is null || item.Evidence.Count == 0)
+                throw new InvalidDataException($"Finding '{item.Id}' requires at least one evidence reference.");
+
+            if (!Enum.TryParse<FindingPriority>(item.Priority, true, out var priority))
+                throw new InvalidDataException(
+                    $"Finding '{item.Id}' priority '{item.Priority}' is not supported.");
+
+            var evidence = item.Evidence.Select(x =>
+            {
+                var reference = new EvidenceReference(
+                    x.SourceId, x.FrameStart, x.FrameEnd, x.Projection, x.Description);
+                try
+                {
+                    reference.Validate();
+                }
+                catch (InvalidOperationException ex)
+                {
+                    throw new InvalidDataException(
+                        $"Finding '{item.Id}' contains invalid evidence: {ex.Message}", ex);
+                }
+
+                return reference;
+            }).ToArray();
+
+            var finding = new GuardianFinding
+            {
+                Id = item.Id.Trim(),
+                Vessel = item.Vessel.Trim(),
+                Segment = item.Segment.Trim(),
+                FindingType = item.FindingType.Trim(),
                 Confidence = item.Confidence,
                 Priority = priority,
                 Evidence = evidence,
-                Explanation = item.Explanation,
-                MeasurementSummary = item.MeasurementSummary,
+                Explanation = item.Explanation?.Trim(),
+                MeasurementSummary = item.MeasurementSummary?.Trim(),
                 Source = FindingSource.StructuredResearchModel,
-                SourceVersion = $"{package.ModelId}:{package.ModelVersion}"
-            });
+                SourceVersion = $"{package.ModelId.Trim()}:{package.ModelVersion.Trim()}"
+            };
+
+            try
+            {
+                finding.Validate();
+            }
+            catch (InvalidOperationException ex)
+            {
+                throw new InvalidDataException(
+                    $"Finding '{item.Id}' failed validation: {ex.Message}", ex);
+            }
+
+            result.Add(finding);
         }
+
         return result;
     }
 }
