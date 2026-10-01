@@ -1,0 +1,48 @@
+name: Cardio Guardian CI
+
+on:
+  push:
+    branches: [ main, "dev/**" ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  windows-build:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: dotnet restore AIClinic.CardioGuardian.sln
+
+      - name: Build Release
+        run: dotnet build AIClinic.CardioGuardian.sln --configuration Release --no-restore
+
+      - name: Run core safety tests
+        run: dotnet run --project tests/AIClinic.CardioGuardian.Core.Tests/AIClinic.CardioGuardian.Core.Tests.csproj --configuration Release --no-build
+
+  python-gateway-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Syntax check local research gateway
+        run: |
+          python -m py_compile ai-research/research_gateway.py
+          python -m py_compile ai-research/model_plugin.py
