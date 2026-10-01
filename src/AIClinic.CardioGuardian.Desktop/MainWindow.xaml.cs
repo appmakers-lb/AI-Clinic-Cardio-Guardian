@@ -45,7 +45,7 @@ public partial class MainWindow : Window
         VoiceStatusText.Text = $"Speech recognition: {_voice.RecognitionStatus}";
         ListenButton.IsEnabled = _voice.SpeechRecognitionAvailable;
 
-        _audit.Write("application_started", new { version = "1.1.4", mode = "RESEARCH" });
+        _audit.Write("application_started", new { version = "1.1.6", mode = "RESEARCH" });
 
         RefreshAll();
         AppendAI(
@@ -312,7 +312,7 @@ public partial class MainWindow : Window
             StatusText.Text = "DICOM import complete. First likely coronary cine loaded automatically.";
             _audit.Write("dicom_folder_imported", new
             {
-                folder = dialog.FolderName,
+                source = System.IO.Path.GetFileName(dialog.FolderName.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar)),
                 filesScanned = result.FilesScanned,
                 dicomOpened = result.DicomFilesOpened,
                 series = result.Series.Count
