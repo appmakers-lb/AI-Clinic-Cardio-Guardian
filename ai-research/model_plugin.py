@@ -1,9 +1,9 @@
-\
 """
-Replace this file with a real, versioned research model adapter.
+Research model adapter boundary.
 
-The default plugin deliberately refuses to analyze images. This prevents the
-application from presenting synthetic/random output as a medical finding.
+Replace MODEL_PLUGIN only with a real, versioned research adapter. The default
+implementation deliberately refuses analysis so the workstation cannot present
+synthetic/random output as a medical finding.
 """
 
 
