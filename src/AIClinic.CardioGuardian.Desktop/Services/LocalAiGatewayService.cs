@@ -11,25 +11,32 @@ public sealed class LocalAiGatewayService : IDisposable
     private readonly HttpClient _http = new()
     {
         BaseAddress = new Uri("http://127.0.0.1:8765"),
-        Timeout = TimeSpan.FromSeconds(10)
+        Timeout = TimeSpan.FromMinutes(2)
     };
 
     private readonly StructuredFindingService _structuredFindingService = new();
 
-    public async Task<(bool Reachable, bool ModelLoaded, string Message)> CheckHealthAsync()
+    public async Task<(bool Reachable, bool ModelLoaded, string Message)> CheckHealthAsync(
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            using var response = await _http.GetAsync("/health");
-            var json = await response.Content.ReadAsStringAsync();
+            using var response = await _http.GetAsync("/health", cancellationToken);
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
                 return (false, false, $"Local AI service returned {(int)response.StatusCode}: {json}");
 
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
             var loaded = root.TryGetProperty("modelLoaded", out var modelLoaded) && modelLoaded.GetBoolean();
-            var message = root.TryGetProperty("message", out var msg) ? msg.GetString() ?? string.Empty : string.Empty;
+            var message = root.TryGetProperty("message", out var msg)
+                ? msg.GetString() ?? string.Empty
+                : string.Empty;
             return (true, loaded, message);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return (false, false, "Local AI health check was cancelled.");
         }
         catch (Exception ex)
         {
@@ -37,8 +44,15 @@ public sealed class LocalAiGatewayService : IDisposable
         }
     }
 
-    public async Task<StructuredFindingPackage> AnalyzeSeriesAsync(ImagingSeriesInfo series)
+    public async Task<StructuredFindingPackage> AnalyzeSeriesAsync(
+        ImagingSeriesInfo series,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(series);
+
+        if (series.FilePaths.Count == 0)
+            throw new InvalidOperationException("The selected series has no local DICOM file paths.");
+
         var request = new
         {
             sourceId = series.Id,
@@ -51,8 +65,12 @@ public sealed class LocalAiGatewayService : IDisposable
             filePaths = series.FilePaths
         };
 
-        using var response = await _http.PostAsJsonAsync("/analyze-series", request);
-        var json = await response.Content.ReadAsStringAsync();
+        using var response = await _http.PostAsJsonAsync(
+            "/analyze-series",
+            request,
+            cancellationToken);
+
+        var json = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException(
