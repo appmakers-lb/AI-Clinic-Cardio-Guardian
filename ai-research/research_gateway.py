@@ -1,36 +1,54 @@
-\
 """
 AI Clinic Cardio Guardian — LOCAL RESEARCH GATEWAY
 
-This service is intentionally localhost-only and refuses analysis until a real
-research model plugin is installed. It is a bridge between the C# workstation
-and a future specialized medical-vision model; it is NOT a diagnostic model.
+Localhost-only bridge between the Windows research workstation and an explicitly
+installed, versioned research model adapter. This gateway is not a diagnostic
+model and fails closed when no model is available.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 try:
     from model_plugin import MODEL_PLUGIN
 except Exception:
     MODEL_PLUGIN = None
 
-app = FastAPI(title="AI Clinic Cardio Guardian Research Gateway", version="1.1.1")
+SERVICE_VERSION = "1.1.6"
+app = FastAPI(
+    title="AI Clinic Cardio Guardian Research Gateway",
+    version=SERVICE_VERSION,
+)
 
 
 class SeriesRequest(BaseModel):
-    sourceId: str
-    studyInstanceUid: str
-    seriesInstanceUid: str
-    modality: str = ""
-    projection: str = ""
-    frameCount: int = 0
-    estimatedFramesPerSecond: float = 0.0
-    filePaths: list[str]
+    sourceId: str = Field(min_length=1, max_length=200)
+    studyInstanceUid: str = Field(default="", max_length=128)
+    seriesInstanceUid: str = Field(default="", max_length=128)
+    modality: str = Field(default="", max_length=32)
+    projection: str = Field(default="", max_length=256)
+    frameCount: int = Field(default=0, ge=0)
+    estimatedFramesPerSecond: float = Field(default=0.0, ge=0.0, le=240.0)
+    filePaths: list[str] = Field(min_length=1)
+
+    @field_validator("filePaths")
+    @classmethod
+    def validate_file_paths(cls, values: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for value in values:
+            if not value or not value.strip():
+                raise ValueError("filePaths cannot contain empty values")
+            path = Path(value)
+            if not path.is_absolute():
+                raise ValueError("Every model input path must be absolute")
+            cleaned.append(str(path))
+        return cleaned
 
 
 @app.get("/health")
@@ -38,8 +56,10 @@ def health() -> dict[str, Any]:
     loaded = bool(MODEL_PLUGIN and getattr(MODEL_PLUGIN, "is_loaded", False))
     return {
         "service": "AI Clinic Cardio Guardian Research Gateway",
-        "version": "1.1.1",
+        "version": SERVICE_VERSION,
         "modelLoaded": loaded,
+        "modelId": getattr(MODEL_PLUGIN, "model_id", None) if loaded else None,
+        "modelVersion": getattr(MODEL_PLUGIN, "model_version", None) if loaded else None,
         "message": (
             "Research model plugin loaded."
             if loaded
@@ -53,19 +73,37 @@ def analyze_series(request: SeriesRequest) -> dict[str, Any]:
     if not MODEL_PLUGIN or not getattr(MODEL_PLUGIN, "is_loaded", False):
         raise HTTPException(
             status_code=503,
-            detail="No validated/versioned research model plugin is loaded."
+            detail="No validated/versioned research model plugin is loaded.",
         )
 
-    result = MODEL_PLUGIN.analyze_series(request.model_dump())
+    model_id = str(getattr(MODEL_PLUGIN, "model_id", "")).strip()
+    model_version = str(getattr(MODEL_PLUGIN, "model_version", "")).strip()
+    if not model_id or not model_version or model_id == "NO_MODEL":
+        raise HTTPException(
+            status_code=503,
+            detail="Loaded model adapter does not expose a valid model ID/version.",
+        )
 
-    # The plugin is required to return the same structured contract consumed by C#.
-    result.setdefault("modelId", getattr(MODEL_PLUGIN, "model_id", "unknown"))
-    result.setdefault("modelVersion", getattr(MODEL_PLUGIN, "model_version", "unknown"))
+    try:
+        result = MODEL_PLUGIN.analyze_series(request.model_dump())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Research model adapter failed: {exc}") from exc
+
+    if not isinstance(result, dict):
+        raise HTTPException(status_code=500, detail="Research model adapter returned a non-object result.")
+
+    result.setdefault("modelId", model_id)
+    result.setdefault("modelVersion", model_version)
     result.setdefault("generatedAtUtc", datetime.now(timezone.utc).isoformat())
     result.setdefault("findings", [])
+
+    if not isinstance(result["findings"], list):
+        raise HTTPException(status_code=500, detail="Research model adapter findings must be an array.")
+
     return result
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="127.0.0.1", port=8765)
