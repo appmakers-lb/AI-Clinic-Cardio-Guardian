@@ -21,7 +21,15 @@ c.AddCineRun(new CineRun
     FrameCount = 60,
     FramesPerSecond = 15
 });
-Assert(c.CineRuns.Count == 1, "whole-case cine memory");
+c.AddCineRun(new CineRun
+{
+    Id = "SER-1",
+    SourceKind = "DICOM",
+    DisplayName = "Duplicate cine",
+    FrameCount = 60,
+    FramesPerSecond = 15
+});
+Assert(c.CineRuns.Count == 1, "duplicate cine run suppressed");
 
 var policy = new GuardianPolicy();
 Assert(policy.CoverageSummary(c).Contains("RCA"), "coverage summary lists incomplete/unassessed segments");
@@ -44,6 +52,25 @@ try
 }
 catch (InvalidOperationException) { blocked = true; }
 Assert(blocked, "unversioned structured model finding blocked");
+
+var invalidConfidenceBlocked = false;
+try
+{
+    c.AddFinding(new GuardianFinding
+    {
+        Id = "F-BAD-CONF",
+        Vessel = "LAD",
+        Segment = "mid",
+        FindingType = "suspected_stenosis",
+        Confidence = 1.5,
+        Priority = FindingPriority.Review,
+        Source = FindingSource.StructuredResearchModel,
+        SourceVersion = "test:1",
+        Evidence = new[] { new EvidenceReference("SER-1", 1, 2, "RAO", "test") }
+    });
+}
+catch (InvalidOperationException) { invalidConfidenceBlocked = true; }
+Assert(invalidConfidenceBlocked, "out-of-range confidence blocked");
 
 var manual = new GuardianFinding
 {
@@ -82,6 +109,9 @@ Assert(policy.ShouldVoiceAlert(finding, true), "high-priority evidence-backed al
 Assert(finding.HasMultiRunEvidence, "multi-run evidence recognized");
 Assert(policy.FindingSummary(c).Contains("RCA"), "finding summary includes structured finding");
 
+var crossVessel = policy.EvaluateAlert(finding, true, "LAD");
+Assert(crossVessel.ShouldAlert && crossVessel.IsCrossVessel, "cross-vessel Guardian alert recognized");
+
 var service = new StructuredFindingService();
 var package = service.Parse("""
 {
@@ -106,5 +136,36 @@ var package = service.Parse("""
 
 var converted = service.ToGuardianFindings(package);
 Assert(converted.Count == 1 && converted[0].SourceVersion == "test-model:1.2.3", "structured finding import is versioned");
+
+var noModelBlocked = false;
+try
+{
+    service.Parse("""{"modelId":"NO_MODEL","modelVersion":"0","findings":[]}""");
+}
+catch (InvalidDataException) { noModelBlocked = true; }
+Assert(noModelBlocked, "NO_MODEL package import blocked");
+
+var badEvidenceBlocked = false;
+try
+{
+    var bad = service.Parse("""
+    {
+      "modelId":"test-model",
+      "modelVersion":"1",
+      "findings":[{
+        "id":"F-BAD",
+        "vessel":"RCA",
+        "segment":"mid",
+        "findingType":"suspected_stenosis",
+        "confidence":0.8,
+        "priority":"Review",
+        "evidence":[{"sourceId":"SER-1","frameStart":5,"frameEnd":2,"description":"bad"}]
+      }]
+    }
+    """);
+    service.ToGuardianFindings(bad);
+}
+catch (InvalidDataException) { badEvidenceBlocked = true; }
+Assert(badEvidenceBlocked, "invalid evidence frame range blocked");
 
 Console.WriteLine("All core safety tests passed.");
