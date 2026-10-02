@@ -50,12 +50,21 @@ public sealed class CoverageEngine
             try
             {
                 foreach (var evidence in item.Evidence)
-                new EvidenceReference(
-                    evidence.SourceId,
-                    evidence.FrameStart,
-                    evidence.FrameEnd,
-                    evidence.Projection,
-                    evidence.Description).Validate();
+                {
+                    new EvidenceReference(
+                        evidence.SourceId,
+                        evidence.FrameStart,
+                        evidence.FrameEnd,
+                        evidence.Projection,
+                        evidence.Description).Validate();
+
+                    if (!state.CineRuns.Any(x =>
+                        string.Equals(x.Id, evidence.SourceId, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        throw new InvalidOperationException(
+                            $"Coverage references unknown evidence source '{evidence.SourceId}'.");
+                    }
+                }
 
                 var segment = state.GetSegment(item.Vessel, item.Segment);
                 var merged = MergeConservatively(segment.Coverage, coverageState);
