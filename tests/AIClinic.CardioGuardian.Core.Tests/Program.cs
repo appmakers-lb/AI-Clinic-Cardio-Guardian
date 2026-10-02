@@ -31,6 +31,16 @@ c.AddCineRun(new CineRun
 });
 Assert(c.CineRuns.Count == 1, "duplicate cine run suppressed");
 
+c.AddCineRun(new CineRun
+{
+    Id = "SER-2",
+    SourceKind = "DICOM",
+    DisplayName = "Second test cine",
+    FrameCount = 40,
+    FramesPerSecond = 15
+});
+Assert(c.CineRuns.Count == 2, "second cine run added for multi-run evidence");
+
 var policy = new GuardianPolicy();
 Assert(policy.CoverageSummary(c).Contains("RCA"), "coverage summary lists incomplete/unassessed segments");
 
