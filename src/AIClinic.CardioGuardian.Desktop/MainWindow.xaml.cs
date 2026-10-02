@@ -18,6 +18,10 @@ public partial class MainWindow : Window
     private CaseState _case = new();
     private readonly GuardianPolicy _guardian = new();
     private readonly StructuredFindingService _structuredFindingService = new();
+    private readonly WholeCaseMemoryService _wholeCaseMemory = new();
+    private readonly CoverageEngine _coverageEngine = new();
+    private readonly GuardianAlertTracker _alertTracker = new();
+    private readonly VoiceCommandParser _voiceCommandParser = new();
     private readonly AuditLogService _audit = new();
     private readonly ResearchCineService _video = new();
     private readonly DicomImportService _dicomImport = new();
@@ -33,6 +37,7 @@ public partial class MainWindow : Window
     private GuardianFinding? _selectedFinding;
     private string? _currentSourceId;
     private bool _isPlaying;
+    private CancellationTokenSource? _analysisCts;
 
     public MainWindow()
     {
@@ -105,38 +110,51 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_analysisCts is not null)
+            return;
+
+        _analysisCts = new CancellationTokenSource();
+        CancelAnalysisButton.IsEnabled = true;
         AnalyzeButton.IsEnabled = false;
+        AnalyzeWholeCaseButton.IsEnabled = false;
         StatusText.Text = $"Running local research AI on {series.Id}…";
 
         try
         {
-            var package = await _localAi.AnalyzeSeriesAsync(series);
+            var package = await _localAi.AnalyzeSeriesAsync(series, _analysisCts.Token);
             var findings = _structuredFindingService.ToGuardianFindings(package);
+            var results = _wholeCaseMemory.AddPackage(_case, findings);
+            var addedFindings = results
+                .Where(x => x.Status == FindingAddStatus.Added)
+                .Select(x => x.Finding)
+                .ToArray();
 
-            var added = 0;
-            foreach (var finding in findings)
+            var coverage = _coverageEngine.ApplyStructuredCoverage(_case, package);
+
+            foreach (var finding in addedFindings)
             {
-                try
-                {
-                    _case.AddFinding(finding);
-                    added++;
+                var decision = _guardian.EvaluateAlert(
+                    finding,
+                    VoiceEnabled.IsChecked == true,
+                    _selectedSegment?.Vessel);
 
-                    if (_guardian.ShouldVoiceAlert(finding, VoiceEnabled.IsChecked == true))
-                    {
-                        _voice.Speak(
-                            $"Doctor, the research model flagged a possible {HumanizeFindingType(finding.FindingType)} in the " +
-                            $"{finding.Segment} {finding.Vessel}. Highlighted for review.");
-                    }
-                }
-                catch
+                if (decision.ShouldAlert &&
+                    _alertTracker.TryAcquire(finding, DateTime.UtcNow, out _))
                 {
-                    // Duplicate or invalid findings are not allowed into the case state.
+                    _voice.Speak(
+                        $"Doctor, the research model flagged a possible {HumanizeFindingType(finding.FindingType)} in the " +
+                        $"{finding.Segment} {finding.Vessel}. Highlighted for review.");
                 }
             }
 
+            var skipped = results.Count(x => x.Status != FindingAddStatus.Added);
             ModelStatusText.Text = $"Local AI: {package.ModelId} {package.ModelVersion}";
-            StatusText.Text = $"Local research AI returned {findings.Count} finding(s); {added} added.";
+            StatusText.Text =
+                $"Research AI: {findings.Count} finding(s), {addedFindings.Length} added, {skipped} duplicate/invalid; " +
+                $"coverage {coverage.Applied} applied, {coverage.Rejected} rejected.";
+
             RefreshFindings();
+            RefreshCoverage();
 
             _audit.Write("local_ai_analysis_completed", new
             {
@@ -144,8 +162,16 @@ public partial class MainWindow : Window
                 package.ModelId,
                 package.ModelVersion,
                 returned = findings.Count,
-                added
+                added = addedFindings.Length,
+                skipped,
+                coverageApplied = coverage.Applied,
+                coverageRejected = coverage.Rejected
             });
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text = "Local research AI analysis cancelled.";
+            _audit.Write("local_ai_analysis_cancelled", new { series.Id });
         }
         catch (Exception ex)
         {
@@ -156,6 +182,10 @@ public partial class MainWindow : Window
         }
         finally
         {
+            _analysisCts.Dispose();
+            _analysisCts = null;
+            CancelAnalysisButton.IsEnabled = false;
+
             var health = await _localAi.CheckHealthAsync();
             AnalyzeButton.IsEnabled = health.Reachable && health.ModelLoaded;
             AnalyzeWholeCaseButton.IsEnabled = health.Reachable && health.ModelLoaded && _series.Count > 0;
@@ -171,11 +201,19 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_analysisCts is not null)
+            return;
+
+        _analysisCts = new CancellationTokenSource();
+        CancelAnalysisButton.IsEnabled = true;
         AnalyzeButton.IsEnabled = false;
         AnalyzeWholeCaseButton.IsEnabled = false;
 
         var totalReturned = 0;
         var totalAdded = 0;
+        var totalSkipped = 0;
+        var coverageApplied = 0;
+        var coverageRejected = 0;
         var failures = new List<string>();
         string? lastModelId = null;
         string? lastModelVersion = null;
@@ -184,30 +222,32 @@ public partial class MainWindow : Window
         {
             for (var i = 0; i < _series.Count; i++)
             {
+                _analysisCts.Token.ThrowIfCancellationRequested();
+
                 var series = _series[i];
-                StatusText.Text = $"Whole-case research AI: cine {i + 1}/{_series.Count} — {series.Id}";
+                StatusText.Text =
+                    $"Whole-case research AI: cine {i + 1}/{_series.Count} — {series.Id}";
 
                 try
                 {
-                    var package = await _localAi.AnalyzeSeriesAsync(series);
+                    var package = await _localAi.AnalyzeSeriesAsync(series, _analysisCts.Token);
                     lastModelId = package.ModelId;
                     lastModelVersion = package.ModelVersion;
 
                     var findings = _structuredFindingService.ToGuardianFindings(package);
                     totalReturned += findings.Count;
 
-                    foreach (var finding in findings)
-                    {
-                        try
-                        {
-                            _case.AddFinding(finding);
-                            totalAdded++;
-                        }
-                        catch
-                        {
-                            // Duplicate or invalid findings are intentionally rejected.
-                        }
-                    }
+                    var results = _wholeCaseMemory.AddPackage(_case, findings);
+                    totalAdded += results.Count(x => x.Status == FindingAddStatus.Added);
+                    totalSkipped += results.Count(x => x.Status != FindingAddStatus.Added);
+
+                    var coverage = _coverageEngine.ApplyStructuredCoverage(_case, package);
+                    coverageApplied += coverage.Applied;
+                    coverageRejected += coverage.Rejected;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
                 }
                 catch (Exception ex)
                 {
@@ -220,9 +260,12 @@ public partial class MainWindow : Window
                 ModelStatusText.Text = $"Local AI: {lastModelId} {lastModelVersion}";
 
             RefreshFindings();
+            RefreshCoverage();
+
             StatusText.Text =
-                $"Whole-case AI complete: {_series.Count - failures.Count}/{_series.Count} cine(s) processed, " +
-                $"{totalReturned} finding(s) returned, {totalAdded} added.";
+                $"Whole-case AI complete: {_series.Count - failures.Count}/{_series.Count} cine(s), " +
+                $"{totalReturned} finding(s), {totalAdded} added, {totalSkipped} duplicate/invalid; " +
+                $"coverage {coverageApplied} applied, {coverageRejected} rejected.";
 
             _audit.Write("whole_case_ai_analysis_completed", new
             {
@@ -231,6 +274,9 @@ public partial class MainWindow : Window
                 failed = failures.Count,
                 returned = totalReturned,
                 added = totalAdded,
+                skipped = totalSkipped,
+                coverageApplied,
+                coverageRejected,
                 modelId = lastModelId,
                 modelVersion = lastModelVersion
             });
@@ -245,12 +291,41 @@ public partial class MainWindow : Window
                     MessageBoxImage.Warning);
             }
         }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text =
+                $"Whole-case analysis cancelled. Findings already accepted remain in the research case.";
+            _audit.Write("whole_case_ai_analysis_cancelled", new
+            {
+                returned = totalReturned,
+                added = totalAdded,
+                skipped = totalSkipped,
+                coverageApplied,
+                coverageRejected
+            });
+            RefreshFindings();
+            RefreshCoverage();
+        }
         finally
         {
+            _analysisCts.Dispose();
+            _analysisCts = null;
+            CancelAnalysisButton.IsEnabled = false;
+
             var health = await _localAi.CheckHealthAsync();
             AnalyzeButton.IsEnabled = health.Reachable && health.ModelLoaded;
             AnalyzeWholeCaseButton.IsEnabled = health.Reachable && health.ModelLoaded && _series.Count > 0;
         }
+    }
+
+    private void CancelAnalysis_Click(object sender, RoutedEventArgs e)
+    {
+        if (_analysisCts is null)
+            return;
+
+        StatusText.Text = "Cancelling research AI analysis…";
+        CancelAnalysisButton.IsEnabled = false;
+        _analysisCts.Cancel();
     }
 
     private async void ImportDicom_Click(object sender, RoutedEventArgs e)
@@ -690,41 +765,48 @@ public partial class MainWindow : Window
         {
             var package = _structuredFindingService.Parse(System.IO.File.ReadAllText(dialog.FileName));
             var findings = _structuredFindingService.ToGuardianFindings(package);
+            var results = _wholeCaseMemory.AddPackage(_case, findings);
+            var addedFindings = results
+                .Where(x => x.Status == FindingAddStatus.Added)
+                .Select(x => x.Finding)
+                .ToArray();
 
-            var added = 0;
-            var skipped = 0;
-            foreach (var finding in findings)
+            foreach (var finding in addedFindings)
             {
-                try
-                {
-                    _case.AddFinding(finding);
-                    added++;
+                var decision = _guardian.EvaluateAlert(
+                    finding,
+                    VoiceEnabled.IsChecked == true,
+                    _selectedSegment?.Vessel);
 
-                    if (_guardian.ShouldVoiceAlert(finding, VoiceEnabled.IsChecked == true))
-                    {
-                        _voice.Speak(
-                            $"Doctor, the research model flagged a possible {HumanizeFindingType(finding.FindingType)} in the " +
-                            $"{finding.Segment} {finding.Vessel}. Highlighted for review.");
-                    }
-                }
-                catch
+                if (decision.ShouldAlert &&
+                    _alertTracker.TryAcquire(finding, DateTime.UtcNow, out _))
                 {
-                    skipped++;
+                    _voice.Speak(
+                        $"Doctor, the research model flagged a possible {HumanizeFindingType(finding.FindingType)} in the " +
+                        $"{finding.Segment} {finding.Vessel}. Highlighted for review.");
                 }
             }
 
+            var coverage = _coverageEngine.ApplyStructuredCoverage(_case, package);
+            var skipped = results.Count(x => x.Status != FindingAddStatus.Added);
+
             ModelStatusText.Text = $"Structured research output: {package.ModelId} {package.ModelVersion}";
             ImportSummaryText.Text =
-                $"Imported {added} structured finding(s) from {package.ModelId}:{package.ModelVersion}. " +
-                $"{skipped} skipped. This does not establish clinical validity.";
+                $"Imported {addedFindings.Length} structured finding(s) from {package.ModelId}:{package.ModelVersion}. " +
+                $"{skipped} duplicate/invalid. Coverage: {coverage.Applied} applied, {coverage.Rejected} rejected. " +
+                "This does not establish clinical validity.";
 
             RefreshFindings();
+            RefreshCoverage();
+
             _audit.Write("structured_findings_imported", new
             {
                 package.ModelId,
                 package.ModelVersion,
-                added,
-                skipped
+                added = addedFindings.Length,
+                skipped,
+                coverageApplied = coverage.Applied,
+                coverageRejected = coverage.Rejected
             });
         }
         catch (Exception ex)
@@ -964,50 +1046,87 @@ public partial class MainWindow : Window
         ListenButton.IsEnabled = false;
         VoiceStatusText.Text = "Listening…";
 
-        var command = await _voice.ListenForCommandAsync();
+        var commandText = await _voice.ListenForCommandAsync();
         ListenButton.IsEnabled = true;
         VoiceStatusText.Text = $"Speech recognition: {_voice.RecognitionStatus}";
 
-        if (string.IsNullOrWhiteSpace(command))
+        if (string.IsNullOrWhiteSpace(commandText))
         {
             AppendAI("No voice command recognized.");
             return;
         }
 
-        AppendDoctor($"[voice] {command}");
+        AppendDoctor($"[voice] {commandText}");
+        var command = _voiceCommandParser.Parse(commandText);
 
-        var lower = command.ToLowerInvariant();
-        if (lower.Contains("next cine"))
+        switch (command.Intent)
         {
-            MoveSeriesSelection(1);
-            AppendAI("Moved to the next cine.");
-            return;
-        }
+            case VoiceIntent.NextCine:
+                MoveSeriesSelection(1);
+                AppendAI("Moved to the next cine.");
+                return;
 
-        if (lower.Contains("previous cine"))
-        {
-            MoveSeriesSelection(-1);
-            AppendAI("Moved to the previous cine.");
-            return;
-        }
+            case VoiceIntent.PreviousCine:
+                MoveSeriesSelection(-1);
+                AppendAI("Moved to the previous cine.");
+                return;
 
-        if (lower.Contains("mute"))
-        {
-            VoiceEnabled.IsChecked = false;
-            AppendAI("Voice output muted.");
-            return;
-        }
+            case VoiceIntent.MuteVoice:
+                VoiceEnabled.IsChecked = false;
+                AppendAI("Voice output muted.");
+                return;
 
-        if (lower.Contains("unmute"))
-        {
-            VoiceEnabled.IsChecked = true;
-            AppendAI("Voice output enabled.");
-            return;
-        }
+            case VoiceIntent.UnmuteVoice:
+                VoiceEnabled.IsChecked = true;
+                AppendAI("Voice output enabled.");
+                return;
 
-        var answer = BuildGroundedAnswer(command);
-        AppendAI(answer);
-        SpeakCopilotIfEnabled(answer);
+            case VoiceIntent.ShowEvidence:
+                if (_selectedFinding is null)
+                {
+                    AppendAI("Select a finding first. Evidence is only shown for an evidence-linked research finding.");
+                    return;
+                }
+                ShowEvidence_Click(this, new RoutedEventArgs());
+                return;
+
+            case VoiceIntent.CoverageSummary:
+            {
+                var summary = _guardian.CoverageSummary(_case);
+                AppendAI(summary);
+                SpeakCopilotIfEnabled(summary);
+                return;
+            }
+
+            case VoiceIntent.FindingsSummary:
+            {
+                var summary = _guardian.FindingSummary(_case);
+                AppendAI(summary);
+                SpeakCopilotIfEnabled(summary);
+                return;
+            }
+
+            case VoiceIntent.Play:
+                if (!_isPlaying && _viewerMode != ViewerMode.None)
+                    PlayPause_Click(this, new RoutedEventArgs());
+                return;
+
+            case VoiceIntent.Pause:
+                if (_isPlaying)
+                    PausePlayback();
+                return;
+
+            case VoiceIntent.Stop:
+                Stop_Click(this, new RoutedEventArgs());
+                return;
+
+            case VoiceIntent.Unknown:
+            default:
+                var answer = BuildGroundedAnswer(commandText);
+                AppendAI(answer);
+                SpeakCopilotIfEnabled(answer);
+                return;
+        }
     }
 
     private void VoiceEnabled_Changed(object sender, RoutedEventArgs e)
@@ -1035,6 +1154,11 @@ public partial class MainWindow : Window
             return;
 
         StopPlayback();
+        _analysisCts?.Cancel();
+        _analysisCts?.Dispose();
+        _analysisCts = null;
+        CancelAnalysisButton.IsEnabled = false;
+        _alertTracker.Reset();
 
         _case = new CaseState();
         _series.Clear();
@@ -1156,6 +1280,8 @@ public partial class MainWindow : Window
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         _playTimer.Stop();
+        _analysisCts?.Cancel();
+        _analysisCts?.Dispose();
         _voice.Dispose();
         _localAi.Dispose();
         _audit.Write("application_closing");
