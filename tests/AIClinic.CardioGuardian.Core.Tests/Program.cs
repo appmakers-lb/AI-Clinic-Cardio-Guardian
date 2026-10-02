@@ -245,4 +245,45 @@ Assert(voiceParser.Parse("show me why").Intent == VoiceIntent.ShowEvidence,
 Assert(voiceParser.Parse("do something dangerous").Intent == VoiceIntent.Unknown,
     "unsupported free-form voice command rejected");
 
+
+var adequateCoveragePackage = service.Parse("""
+{
+  "modelId":"coverage-model",
+  "modelVersion":"2.0",
+  "findings":[],
+  "coverage":[{
+    "vessel":"RCA",
+    "segment":"mid",
+    "state":"Adequate",
+    "note":"Conflicting later observation",
+    "evidence":[{"sourceId":"SER-2","frameStart":2,"frameEnd":8,"description":"test"}]
+  }]
+}
+""");
+coverageEngine.ApplyStructuredCoverage(c, adequateCoveragePackage);
+Assert(c.GetSegment("RCA", "mid").Coverage == CoverageState.Partial,
+    "coverage merge stays conservative when partial conflicts with adequate");
+
+var physiology = new PhysiologyResearchMeasurement(
+    "PHY-1",
+    "LAD",
+    "mid",
+    "research_ratio",
+    0.85,
+    "ratio",
+    new ResearchProvenance("PHY-SOURCE", "test-adapter", "1.0", ResearchModality.Ffr),
+    new[] { new EvidenceReference("SER-1", 1, 3, "RAO", "linked research evidence") });
+
+var ivus = new IntravascularResearchEvidence(
+    "IVUS-1",
+    "LAD",
+    "mid",
+    new ResearchProvenance("IVUS-SOURCE", "test-ivus", "1.0", ResearchModality.Ivus),
+    "Synthetic research measurement",
+    new[] { new EvidenceReference("IVUS-SOURCE", 1, 2, null, "synthetic evidence") });
+
+var multimodal = new MultimodalEvidenceService();
+Assert(multimodal.Validate(new[] { physiology }, new[] { ivus }).Count == 0,
+    "multimodal research contracts validate with explicit provenance");
+
 Console.WriteLine("All core safety tests passed.");
