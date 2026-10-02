@@ -203,6 +203,16 @@ public sealed class CaseState
         if (_findings.Any(x => string.Equals(x.Id, finding.Id, StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException($"Finding '{finding.Id}' already exists.");
 
+        foreach (var evidence in finding.Evidence)
+        {
+            if (!_cineRuns.Any(x =>
+                string.Equals(x.Id, evidence.SourceId, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException(
+                    $"Finding '{finding.Id}' references unknown evidence source '{evidence.SourceId}'.");
+            }
+        }
+
         _findings.Add(finding);
     }
 
