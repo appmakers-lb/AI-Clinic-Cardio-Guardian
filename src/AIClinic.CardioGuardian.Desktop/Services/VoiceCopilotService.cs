@@ -82,7 +82,15 @@ public sealed class VoiceCopilotService : IDisposable
                 "mute voice",
                 "unmute voice",
                 "next cine",
-                "previous cine");
+                "next series",
+                "previous cine",
+                "previous series",
+                "play",
+                "play cine",
+                "pause",
+                "pause cine",
+                "stop",
+                "stop cine");
 
             var builder = new GrammarBuilder(commands) { Culture = info.Culture };
             _recognizer.LoadGrammar(new Grammar(builder));
