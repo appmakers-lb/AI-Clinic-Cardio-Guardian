@@ -57,10 +57,13 @@ public sealed class CoverageEngine
                     evidence.Projection,
                     evidence.Description).Validate();
 
+                var segment = state.GetSegment(item.Vessel, item.Segment);
+                var merged = MergeConservatively(segment.Coverage, coverageState);
+
                 state.SetCoverage(
                     item.Vessel,
                     item.Segment,
-                    coverageState,
+                    merged,
                     $"Structured research coverage from {package.ModelId}:{package.ModelVersion}. " +
                     (item.Note?.Trim() ?? string.Empty));
 
@@ -74,5 +77,24 @@ public sealed class CoverageEngine
         }
 
         return new(applied, rejected, messages);
+    }
+
+    private static CoverageState MergeConservatively(
+        CoverageState current,
+        CoverageState incoming)
+    {
+        if (current == CoverageState.Unassessed)
+            return incoming;
+
+        if (current == incoming)
+            return current;
+
+        if (current == CoverageState.Incomplete || incoming == CoverageState.Incomplete)
+            return CoverageState.Incomplete;
+
+        if (current == CoverageState.Partial || incoming == CoverageState.Partial)
+            return CoverageState.Partial;
+
+        return CoverageState.Adequate;
     }
 }
