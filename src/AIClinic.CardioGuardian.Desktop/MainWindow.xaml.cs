@@ -132,20 +132,7 @@ public partial class MainWindow : Window
             var coverage = _coverageEngine.ApplyStructuredCoverage(_case, package);
 
             foreach (var finding in addedFindings)
-            {
-                var decision = _guardian.EvaluateAlert(
-                    finding,
-                    VoiceEnabled.IsChecked == true,
-                    _selectedSegment?.Vessel);
-
-                if (decision.ShouldAlert &&
-                    _alertTracker.TryAcquire(finding, DateTime.UtcNow, out _))
-                {
-                    _voice.Speak(
-                        $"Doctor, the research model flagged a possible {HumanizeFindingType(finding.FindingType)} in the " +
-                        $"{finding.Segment} {finding.Vessel}. Highlighted for review.");
-                }
-            }
+                ProcessGuardianAlert(finding);
 
             var skipped = results.Count(x => x.Status != FindingAddStatus.Added);
             ModelStatusText.Text = $"Local AI: {package.ModelId} {package.ModelVersion}";
@@ -772,20 +759,7 @@ public partial class MainWindow : Window
                 .ToArray();
 
             foreach (var finding in addedFindings)
-            {
-                var decision = _guardian.EvaluateAlert(
-                    finding,
-                    VoiceEnabled.IsChecked == true,
-                    _selectedSegment?.Vessel);
-
-                if (decision.ShouldAlert &&
-                    _alertTracker.TryAcquire(finding, DateTime.UtcNow, out _))
-                {
-                    _voice.Speak(
-                        $"Doctor, the research model flagged a possible {HumanizeFindingType(finding.FindingType)} in the " +
-                        $"{finding.Segment} {finding.Vessel}. Highlighted for review.");
-                }
-            }
+                ProcessGuardianAlert(finding);
 
             var coverage = _coverageEngine.ApplyStructuredCoverage(_case, package);
             var skipped = results.Count(x => x.Status != FindingAddStatus.Added);
@@ -1127,6 +1101,50 @@ public partial class MainWindow : Window
                 SpeakCopilotIfEnabled(answer);
                 return;
         }
+    }
+
+    private void ProcessGuardianAlert(GuardianFinding finding)
+    {
+        var decision = _guardian.EvaluateAlert(
+            finding,
+            VoiceEnabled.IsChecked == true,
+            _selectedSegment?.Vessel);
+
+        if (!decision.ShouldAlert)
+        {
+            _audit.Write("guardian_alert_not_issued", new
+            {
+                finding.Id,
+                decision.Reason,
+                decision.IsCrossVessel
+            });
+            return;
+        }
+
+        if (!_alertTracker.TryAcquire(finding, DateTime.UtcNow, out var trackerReason))
+        {
+            _audit.Write("guardian_alert_suppressed", new
+            {
+                finding.Id,
+                reason = trackerReason,
+                decision.IsCrossVessel
+            });
+            return;
+        }
+
+        _audit.Write("guardian_alert_issued", new
+        {
+            finding.Id,
+            decision.Reason,
+            decision.IsCrossVessel,
+            finding.Priority,
+            finding.Confidence,
+            evidenceCount = finding.Evidence.Count
+        });
+
+        _voice.Speak(
+            $"Doctor, the research model flagged a possible {HumanizeFindingType(finding.FindingType)} in the " +
+            $"{finding.Segment} {finding.Vessel}. Highlighted for review.");
     }
 
     private void VoiceEnabled_Changed(object sender, RoutedEventArgs e)
