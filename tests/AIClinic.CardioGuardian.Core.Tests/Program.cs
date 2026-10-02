@@ -168,4 +168,81 @@ try
 catch (InvalidDataException) { badEvidenceBlocked = true; }
 Assert(badEvidenceBlocked, "invalid evidence frame range blocked");
 
+
+var memory = new WholeCaseMemoryService();
+var duplicateByEvidence = new GuardianFinding
+{
+    Id = "F-002-NEW-ID",
+    Vessel = "RCA",
+    Segment = "proximal",
+    FindingType = "suspected_occlusion",
+    Confidence = 0.91,
+    Priority = FindingPriority.HighPriorityReview,
+    Source = FindingSource.StructuredResearchModel,
+    SourceVersion = "research-model:1.0",
+    Evidence = new[]
+    {
+        new EvidenceReference("SER-1", 10, 20, "RAO", "Same evidence"),
+        new EvidenceReference("SER-2", 4, 9, "LAO", "Same second view")
+    }
+};
+var duplicateResult = memory.TryAddFinding(c, duplicateByEvidence);
+Assert(duplicateResult.Status == FindingAddStatus.DuplicateEvidence, "whole-case semantic duplicate suppressed");
+
+var evidenceIndex = memory.BuildEvidenceIndex(c);
+Assert(evidenceIndex.ContainsKey("SER-1") && evidenceIndex["SER-1"].Count >= 2,
+    "whole-case evidence index maps cine to findings");
+
+var coveragePackage = service.Parse("""
+{
+  "modelId":"coverage-model",
+  "modelVersion":"2.0",
+  "findings":[],
+  "coverage":[{
+    "vessel":"RCA",
+    "segment":"mid",
+    "state":"Partial",
+    "note":"Synthetic coverage test",
+    "evidence":[{"sourceId":"SER-1","frameStart":1,"frameEnd":6,"description":"test"}]
+  }]
+}
+""");
+var coverageEngine = new CoverageEngine();
+var coverageResult = coverageEngine.ApplyStructuredCoverage(c, coveragePackage);
+Assert(coverageResult.Applied == 1 &&
+       c.GetSegment("RCA", "mid").Coverage == CoverageState.Partial,
+       "structured coverage applied only with evidence");
+
+var unsafeCoveragePackage = service.Parse("""
+{
+  "modelId":"coverage-model",
+  "modelVersion":"2.0",
+  "findings":[],
+  "coverage":[{
+    "vessel":"RCA",
+    "segment":"distal",
+    "state":"Adequate",
+    "note":"No evidence should be rejected",
+    "evidence":[]
+  }]
+}
+""");
+var unsafeCoverage = coverageEngine.ApplyStructuredCoverage(c, unsafeCoveragePackage);
+Assert(unsafeCoverage.Rejected == 1 &&
+       c.GetSegment("RCA", "distal").Coverage == CoverageState.Unassessed,
+       "coverage cannot become adequate without evidence");
+
+var alertTracker = new GuardianAlertTracker(TimeSpan.FromMinutes(2));
+Assert(alertTracker.TryAcquire(finding, DateTime.UtcNow, out _), "first Guardian alert acquired");
+Assert(!alertTracker.TryAcquire(finding, DateTime.UtcNow.AddSeconds(5), out _),
+    "duplicate Guardian alert suppressed");
+
+var voiceParser = new VoiceCommandParser();
+Assert(voiceParser.Parse("next cine").Intent == VoiceIntent.NextCine,
+    "voice next-cine intent parsed");
+Assert(voiceParser.Parse("show me why").Intent == VoiceIntent.ShowEvidence,
+    "voice evidence intent parsed");
+Assert(voiceParser.Parse("do something dangerous").Intent == VoiceIntent.Unknown,
+    "unsupported free-form voice command rejected");
+
 Console.WriteLine("All core safety tests passed.");
