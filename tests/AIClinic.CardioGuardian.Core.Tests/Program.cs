@@ -296,4 +296,36 @@ var multimodal = new MultimodalEvidenceService();
 Assert(multimodal.Validate(new[] { physiology }, new[] { ivus }).Count == 0,
     "multimodal research contracts validate with explicit provenance");
 
+
+var vesselEvidence = new VesselFrameResearchEvidence(
+    "SER-1",
+    3,
+    "LAD",
+    0.88,
+    "vessel-research-model",
+    "1.0",
+    new[] { new NormalizedImagePoint(0.4, 0.5), new NormalizedImagePoint(0.45, 0.55) });
+vesselEvidence.Validate();
+Assert(true, "vessel research contract accepts normalized evidence");
+
+var qcaCalibrationBlocked = false;
+try
+{
+    new QcaResearchMeasurement(
+        "QCA-BAD",
+        "LAD",
+        "mid",
+        3.0,
+        1.5,
+        50,
+        12,
+        null,
+        5,
+        new ResearchProvenance("SER-1", "qca-adapter", "1.0", ResearchModality.Angiography),
+        new[] { new EvidenceReference("SER-1", 1, 5, "RAO", "synthetic") })
+        .Validate();
+}
+catch (InvalidOperationException) { qcaCalibrationBlocked = true; }
+Assert(qcaCalibrationBlocked, "physical QCA measurement blocked without calibration source");
+
 Console.WriteLine("All core safety tests passed.");
