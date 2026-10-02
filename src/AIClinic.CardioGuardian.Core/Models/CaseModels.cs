@@ -272,6 +272,7 @@ public sealed class StructuredFindingPackage
     public string? CaseId { get; init; }
     public string? GeneratedAtUtc { get; init; }
     public IReadOnlyList<StructuredFindingItem> Findings { get; init; } = Array.Empty<StructuredFindingItem>();
+    public IReadOnlyList<StructuredCoverageItem> Coverage { get; init; } = Array.Empty<StructuredCoverageItem>();
 }
 
 public sealed class StructuredFindingItem
@@ -294,4 +295,13 @@ public sealed class StructuredEvidenceItem
     public int? FrameEnd { get; init; }
     public string? Projection { get; init; }
     public string? Description { get; init; }
+}
+
+public sealed class StructuredCoverageItem
+{
+    public string Vessel { get; init; } = string.Empty;
+    public string Segment { get; init; } = string.Empty;
+    public string State { get; init; } = "Unassessed";
+    public string? Note { get; init; }
+    public IReadOnlyList<StructuredEvidenceItem> Evidence { get; init; } = Array.Empty<StructuredEvidenceItem>();
 }
