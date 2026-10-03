@@ -1,0 +1,7 @@
+# Optional research-demo dependencies. Not installed by the default gateway.
+ultralytics>=8.3,<9
+huggingface_hub>=0.30,<2
+# Pixel-data decoders improve compatibility with compressed DICOM.
+pylibjpeg>=2,<3
+pylibjpeg-libjpeg>=2,<3
+pylibjpeg-openjpeg>=2,<3
