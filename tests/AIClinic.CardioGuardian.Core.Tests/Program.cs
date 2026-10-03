@@ -328,4 +328,59 @@ try
 catch (InvalidOperationException) { qcaCalibrationBlocked = true; }
 Assert(qcaCalibrationBlocked, "physical QCA measurement blocked without calibration source");
 
+var regionPackage = service.Parse("""
+{
+  "modelId":"demo-region-model",
+  "modelVersion":"1.0",
+  "findings":[{
+    "id":"F-REGION",
+    "vessel":"Unassigned",
+    "segment":"frame-level",
+    "findingType":"Research stenosis candidate",
+    "confidence":0.76,
+    "priority":"Review",
+    "evidence":[{
+      "sourceId":"SER-1",
+      "frameStart":7,
+      "frameEnd":7,
+      "description":"candidate",
+      "region":{"xMin":0.2,"yMin":0.3,"xMax":0.5,"yMax":0.7}
+    }]
+  }]
+}
+""");
+var regionFinding = service.ToGuardianFindings(regionPackage).Single();
+Assert(regionFinding.Evidence[0].Region is not null &&
+       Math.Abs(regionFinding.Evidence[0].Region!.XMin - 0.2) < 0.0001,
+    "normalized candidate region preserved through structured finding import");
+
+var invalidRegionBlocked = false;
+try
+{
+    var invalidRegionPackage = service.Parse("""
+    {
+      "modelId":"demo-region-model",
+      "modelVersion":"1.0",
+      "findings":[{
+        "id":"F-REGION-BAD",
+        "vessel":"Unassigned",
+        "segment":"frame-level",
+        "findingType":"Research stenosis candidate",
+        "confidence":0.76,
+        "priority":"Review",
+        "evidence":[{
+          "sourceId":"SER-1",
+          "frameStart":7,
+          "frameEnd":7,
+          "description":"candidate",
+          "region":{"xMin":0.8,"yMin":0.3,"xMax":0.5,"yMax":0.7}
+        }]
+      }]
+    }
+    """);
+    service.ToGuardianFindings(invalidRegionPackage);
+}
+catch (InvalidDataException) { invalidRegionBlocked = true; }
+Assert(invalidRegionBlocked, "invalid normalized candidate region blocked");
+
 Console.WriteLine("All core safety tests passed.");
