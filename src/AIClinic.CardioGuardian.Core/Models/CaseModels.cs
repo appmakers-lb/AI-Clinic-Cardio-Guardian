@@ -31,12 +31,30 @@ public enum FindingStatus
     Dismissed = 2
 }
 
+public sealed record NormalizedImageRegion(
+    double XMin,
+    double YMin,
+    double XMax,
+    double YMax)
+{
+    public void Validate()
+    {
+        var values = new[] { XMin, YMin, XMax, YMax };
+        if (values.Any(value => double.IsNaN(value) || double.IsInfinity(value) || value is < 0 or > 1))
+            throw new InvalidOperationException("Evidence region coordinates must be finite normalized values from 0 to 1.");
+
+        if (XMax <= XMin || YMax <= YMin)
+            throw new InvalidOperationException("Evidence region must have positive width and height.");
+    }
+}
+
 public sealed record EvidenceReference(
     string SourceId,
     int? FrameStart,
     int? FrameEnd,
     string? Projection,
-    string? Description)
+    string? Description,
+    NormalizedImageRegion? Region = null)
 {
     public void Validate()
     {
@@ -48,6 +66,8 @@ public sealed record EvidenceReference(
 
         if (FrameStart.HasValue && FrameEnd.HasValue && FrameEnd.Value < FrameStart.Value)
             throw new InvalidOperationException("Evidence FrameEnd cannot be before FrameStart.");
+
+        Region?.Validate();
     }
 }
 
@@ -305,6 +325,7 @@ public sealed class StructuredEvidenceItem
     public int? FrameEnd { get; init; }
     public string? Projection { get; init; }
     public string? Description { get; init; }
+    public NormalizedImageRegion? Region { get; init; }
 }
 
 public sealed class StructuredCoverageItem
