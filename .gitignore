@@ -11,7 +11,8 @@ __pycache__/
 *.py[cod]
 
 # Local AI / model files
-models/
+/models/
+/ai-research/models/
 *.onnx
 *.pt
 *.pth
