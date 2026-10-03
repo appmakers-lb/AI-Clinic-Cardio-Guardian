@@ -20,7 +20,7 @@ try:
 except Exception:
     MODEL_PLUGIN = None
 
-SERVICE_VERSION = "1.1.6"
+SERVICE_VERSION = "1.2.0"
 app = FastAPI(
     title="AI Clinic Cardio Guardian Research Gateway",
     version=SERVICE_VERSION,
@@ -60,10 +60,15 @@ def health() -> dict[str, Any]:
         "modelLoaded": loaded,
         "modelId": getattr(MODEL_PLUGIN, "model_id", None) if loaded else None,
         "modelVersion": getattr(MODEL_PLUGIN, "model_version", None) if loaded else None,
+        "researchOnly": True,
         "message": (
-            "Research model plugin loaded."
+            "RESEARCH-ONLY model loaded. Outputs require cardiologist review and are not for clinical decisions."
             if loaded
-            else "No research medical-vision model loaded. Analysis is blocked."
+            else (
+                "Research demo model failed to load: " + str(getattr(MODEL_PLUGIN, "load_error", "unknown error"))
+                if getattr(MODEL_PLUGIN, "load_error", None)
+                else "No research medical-vision model loaded. Analysis is blocked."
+            )
         ),
     }
 
