@@ -23,5 +23,22 @@
         }
       ]
     }
+  ],
+  "coverage": [
+    {
+      "vessel": "RCA",
+      "segment": "proximal",
+      "state": "Partial",
+      "note": "EXAMPLE DATA ONLY. Coverage must be supported by explicit model evidence.",
+      "evidence": [
+        {
+          "sourceId": "SER-REPLACE_ME",
+          "frameStart": 10,
+          "frameEnd": 20,
+          "projection": "REPLACE_ME",
+          "description": "EXAMPLE coverage evidence reference only"
+        }
+      ]
+    }
   ]
 }

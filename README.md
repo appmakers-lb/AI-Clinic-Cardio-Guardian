@@ -1,6 +1,18 @@
-# AI Clinic Cardio Guardian v1.1.5
+# AI Clinic Cardio Guardian v1.1.6
 
-## v1.1.5 highlights
+## v1.1.6 highlights
+
+- Whole-case finding memory now suppresses duplicate IDs and duplicate evidence-linked findings.
+- Evidence references must point to cine runs already loaded in the current case.
+- Structured model output can now carry evidence-bound coronary coverage states.
+- Coverage Guardian merges conflicting coverage conservatively so Partial/Incomplete cannot be overwritten by a later Adequate claim.
+- Whole-case AI analysis is cancellable from the toolbar.
+- Guardian voice alerts now use duplicate suppression and write explicit issued/suppressed audit events.
+- Voice commands now use a constrained intent parser and support cine play/pause/stop in addition to navigation and evidence review.
+- Added vendor-neutral research interfaces for vessel vision, calibrated QCA, physiology, IVUS and OCT.
+- Added GitHub CI for Windows Release build, core safety tests, and Python gateway syntax checks.
+
+## v1.1.5 baseline retained
 
 - Responsive/maximized WPF layout rebuilt for laptop screens and Windows DPI scaling.
 - Two-row toolbar so primary buttons no longer disappear off-screen.
@@ -14,7 +26,7 @@ Windows research workstation for coronary angiography / Cath-Lab AI development.
 
 > **RESEARCH MODE — NOT FOR CLINICAL DECISIONS**
 
-## What v1.1.5 actually does
+## What v1.1.6 actually does
 
 ### Cardiac CD / USB / DICOM
 - Imports an entire cardiac CD, USB, or copied DICOM folder.
@@ -73,7 +85,7 @@ Example commands:
 - `previous cine`
 - `mute voice`
 
-## What v1.1 does NOT do
+## What v1.1.6 does NOT do
 
 It does not yet contain a clinically validated model that can independently identify a blocked coronary artery from raw angiography.
 

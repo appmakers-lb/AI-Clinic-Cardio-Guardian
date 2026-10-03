@@ -6,16 +6,24 @@ obj/
 *.cache
 *.log
 
+# Python generated files
+__pycache__/
+*.py[cod]
+
 # Local AI / model files
-models/
+/models/
+/ai-research/models/
 *.onnx
 *.pt
 *.pth
+*.engine
 
 # Patient / medical data — NEVER COMMIT
 patient_data/
 dicom_data/
 *.dcm
+*.dicom
+*.ima
 DICOMDIR
 
 # Secrets
