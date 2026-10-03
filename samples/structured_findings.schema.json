@@ -107,6 +107,24 @@
                 },
                 "description": {
                   "type": "string"
+                },
+                "region": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "required": [
+                    "xMin",
+                    "yMin",
+                    "xMax",
+                    "yMax"
+                  ],
+                  "properties": {
+                    "xMin": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "yMin": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "xMax": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "yMax": { "type": "number", "minimum": 0, "maximum": 1 }
+                  }
                 }
               }
             }
@@ -182,6 +200,24 @@
                 },
                 "description": {
                   "type": "string"
+                },
+                "region": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "required": [
+                    "xMin",
+                    "yMin",
+                    "xMax",
+                    "yMax"
+                  ],
+                  "properties": {
+                    "xMin": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "yMin": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "xMax": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "yMax": { "type": "number", "minimum": 0, "maximum": 1 }
+                  }
                 }
               }
             }
