@@ -3,6 +3,9 @@ using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using AIClinic.CardioGuardian.Core.Models;
@@ -50,12 +53,13 @@ public partial class MainWindow : Window
         VoiceStatusText.Text = $"Speech recognition: {_voice.RecognitionStatus}";
         ListenButton.IsEnabled = _voice.SpeechRecognitionAvailable;
 
-        _audit.Write("application_started", new { version = "1.1.6", mode = "RESEARCH" });
+        _audit.Write("application_started", new { version = "1.2.0", mode = "RESEARCH" });
 
         RefreshAll();
         AppendAI(
             "Research Mode ready. Import a cardiac DICOM CD/USB to review all cine runs. " +
-            "No validated medical vision model is connected, so I will not invent a stenosis or occlusion.");
+            "The default gateway remains fail-closed. An optional unvalidated research-demo detector can be connected " +
+            "to flag frame-level candidate regions for cardiologist review; it is not for clinical decisions.");
     }
 
 
@@ -488,6 +492,7 @@ public partial class MainWindow : Window
             FrameStatusText.Text =
                 $"Frame {_dicomCine.CurrentFrameIndex + 1}/{Math.Max(1, _dicomCine.FrameCount)}  |  " +
                 $"{_dicomCine.FramesPerSecond:0.#} fps";
+            DrawEvidenceOverlay();
         }
         catch (Exception ex)
         {
@@ -794,6 +799,7 @@ public partial class MainWindow : Window
     {
         _selectedFinding = (FindingList.SelectedItem as ListBoxItem)?.Tag as GuardianFinding;
         UpdateFindingDetail();
+        DrawEvidenceOverlay();
     }
 
     private void UpdateFindingDetail()
@@ -846,9 +852,12 @@ public partial class MainWindow : Window
         for (var i = 0; i < _selectedFinding.Evidence.Count; i++)
         {
             var evi = _selectedFinding.Evidence[i];
+            var regionText = evi.Region is null
+                ? string.Empty
+                : $" | candidate box x={evi.Region.XMin:P0}-{evi.Region.XMax:P0}, y={evi.Region.YMin:P0}-{evi.Region.YMax:P0}";
             evidenceText.AppendLine(
                 $"{i + 1}. {evi.SourceId} | frames {evi.FrameStart?.ToString() ?? "?"}-{evi.FrameEnd?.ToString() ?? "?"} | " +
-                $"{evi.Projection.OrFallback("projection n/a")} | {evi.Description}");
+                $"{evi.Projection.OrFallback("projection n/a")} | {evi.Description}{regionText}");
         }
 
         NavigateToFirstEvidence(_selectedFinding);
@@ -879,6 +888,78 @@ public partial class MainWindow : Window
             evidence.FrameStart is int seconds)
         {
             CinePlayer.Position = TimeSpan.FromSeconds(Math.Max(0, seconds));
+        }
+    }
+
+    private void OverlayCanvas_SizeChanged(object sender, SizeChangedEventArgs e) =>
+        DrawEvidenceOverlay();
+
+    private void DrawEvidenceOverlay()
+    {
+        OverlayCanvas.Children.Clear();
+
+        if (_viewerMode != ViewerMode.Dicom ||
+            _selectedFinding is null ||
+            DicomFrameImage.Source is not BitmapSource source ||
+            string.IsNullOrWhiteSpace(_currentSourceId))
+        {
+            return;
+        }
+
+        var canvasWidth = OverlayCanvas.ActualWidth;
+        var canvasHeight = OverlayCanvas.ActualHeight;
+        if (canvasWidth <= 0 || canvasHeight <= 0 || source.PixelWidth <= 0 || source.PixelHeight <= 0)
+            return;
+
+        var frame = _dicomCine.CurrentFrameIndex;
+        var evidence = _selectedFinding.Evidence
+            .Where(item =>
+                item.Region is not null &&
+                string.Equals(item.SourceId, _currentSourceId, StringComparison.OrdinalIgnoreCase) &&
+                frame >= (item.FrameStart ?? frame) &&
+                frame <= (item.FrameEnd ?? item.FrameStart ?? frame))
+            .ToArray();
+
+        if (evidence.Length == 0)
+            return;
+
+        var scale = Math.Min(canvasWidth / source.PixelWidth, canvasHeight / source.PixelHeight);
+        var displayedWidth = source.PixelWidth * scale;
+        var displayedHeight = source.PixelHeight * scale;
+        var offsetX = (canvasWidth - displayedWidth) / 2.0;
+        var offsetY = (canvasHeight - displayedHeight) / 2.0;
+
+        foreach (var item in evidence)
+        {
+            var region = item.Region!;
+            var left = offsetX + region.XMin * displayedWidth;
+            var top = offsetY + region.YMin * displayedHeight;
+            var width = (region.XMax - region.XMin) * displayedWidth;
+            var height = (region.YMax - region.YMin) * displayedHeight;
+
+            var rectangle = new Rectangle
+            {
+                Width = width,
+                Height = height,
+                Stroke = Brushes.OrangeRed,
+                StrokeThickness = 3,
+                Fill = Brushes.Transparent
+            };
+            Canvas.SetLeft(rectangle, left);
+            Canvas.SetTop(rectangle, top);
+            OverlayCanvas.Children.Add(rectangle);
+
+            var label = new TextBlock
+            {
+                Text = $"RESEARCH CANDIDATE  {_selectedFinding.Confidence:P0}",
+                Foreground = Brushes.Orange,
+                Background = new SolidColorBrush(Color.FromArgb(220, 8, 12, 18)),
+                FontWeight = FontWeights.Bold,
+                Padding = new Thickness(5, 2, 5, 2)
+            };
+            Canvas.SetLeft(label, left);
+            Canvas.SetTop(label, Math.Max(0, top - 24));
+            OverlayCanvas.Children.Add(label);
         }
     }
 
@@ -1191,6 +1272,7 @@ public partial class MainWindow : Window
         CaseRunsList.Items.Clear();
         FindingList.Items.Clear();
         DicomFrameImage.Source = null;
+        OverlayCanvas.Children.Clear();
         DicomFrameImage.Visibility = Visibility.Collapsed;
         CinePlayer.Visibility = Visibility.Collapsed;
         CinePlayer.Source = null;
