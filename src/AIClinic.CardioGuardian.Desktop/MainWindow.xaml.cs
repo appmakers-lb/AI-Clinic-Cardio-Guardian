@@ -54,13 +54,14 @@ public partial class MainWindow : Window
         VoiceStatusText.Text = $"Speech recognition: {_voice.RecognitionStatus}";
         ListenButton.IsEnabled = _voice.SpeechRecognitionAvailable;
 
-        _audit.Write("application_started", new { version = "1.2.0", mode = "RESEARCH" });
+        _audit.Write("application_started", new { version = "1.2.1", mode = "RESEARCH" });
 
         RefreshAll();
         AppendAI(
             "Research Mode ready. Import a cardiac DICOM CD/USB to review all cine runs. " +
-            "The optional v1.2 research model can flag evidence-linked stenosis candidates for physician review. " +
-            "It is not clinically validated and a negative result is never a clearance statement.");
+            "The optional v1.2.1 research model only surfaces stenosis candidates that also have vessel support " +
+            "and temporal persistence. When geometry quality is sufficient it shows a wide-range apparent diameter " +
+            "reduction estimate. It is not clinical QCA and a negative result is never a clearance statement.");
     }
 
 
@@ -829,9 +830,12 @@ public partial class MainWindow : Window
             ? $"Model score: {_selectedFinding.Confidence:0.00}"
             : $"Confidence: {_selectedFinding.Confidence:P0}";
 
+        var estimateLabel = BuildResearchEstimateLabel(_selectedFinding);
+
         FindingDetailText.Text =
             $"{_selectedFinding.Vessel} {_selectedFinding.Segment} — {_selectedFinding.FindingType}\n" +
             $"{scoreLabel} | Priority: {_selectedFinding.Priority} | Status: {_selectedFinding.Status}\n" +
+            $"{estimateLabel}\n" +
             $"Source: {_selectedFinding.Source} / {_selectedFinding.SourceVersion.OrFallback("(not specified)")}\n" +
             $"{_selectedFinding.MeasurementSummary.OrFallback(string.Empty)}\n" +
             $"{_selectedFinding.Explanation.OrFallback("No explanation supplied.")}";
@@ -886,6 +890,7 @@ public partial class MainWindow : Window
         FindingDetailText.Text =
             $"{_selectedFinding.Vessel} {_selectedFinding.Segment} — {_selectedFinding.FindingType}\n" +
             $"Model score: {_selectedFinding.Confidence:0.00} (not disease probability)\n" +
+            $"{BuildResearchEstimateLabel(_selectedFinding)}\n" +
             $"Evidence: {string.Join("; ", _selectedFinding.Evidence.Select(e => $"frame {(e.FrameStart ?? 0) + 1} — {e.Description.OrFallback("research candidate")}"))}";
 
         StatusText.Text = "Evidence frame loaded and AI candidate region highlighted.";
@@ -1005,7 +1010,9 @@ public partial class MainWindow : Window
             Padding = new Thickness(6, 3, 6, 3),
             Child = new TextBlock
             {
-                Text = $"RESEARCH AI CANDIDATE • score {_selectedFinding.Confidence:0.00}",
+                Text = _selectedFinding.EstimatedDiameterStenosisPercent is double estimate
+                    ? $"RESEARCH AI • ~{estimate:0}% apparent narrowing"
+                    : $"RESEARCH AI CANDIDATE • score {_selectedFinding.Confidence:0.00}",
                 Foreground = Brushes.White,
                 FontWeight = FontWeights.SemiBold,
                 FontSize = 11
@@ -1280,9 +1287,22 @@ public partial class MainWindow : Window
         var frame = finding.Evidence.FirstOrDefault()?.FrameStart;
         var frameText = frame.HasValue ? $" at frame {frame.Value + 1}" : string.Empty;
 
-        _voice.Speak(
-            $"Doctor, research-only AI flagged a stenosis candidate{frameText}. " +
-            "Please review the evidence. This is not a diagnosis.");
+        if (finding.EstimatedDiameterStenosisPercent is double estimate &&
+            finding.EstimatedDiameterStenosisLowerPercent is double lower &&
+            finding.EstimatedDiameterStenosisUpperPercent is double upper)
+        {
+            _voice.Speak(
+                $"Doctor, research-only AI flagged a possible narrowed vessel region{frameText}. " +
+                $"The apparent diameter reduction estimate is about {estimate:0} percent, " +
+                $"with a wide research range from {lower:0} to {upper:0} percent. " +
+                "Please review the evidence. This is not clinical Q C A or a diagnosis.");
+        }
+        else
+        {
+            _voice.Speak(
+                $"Doctor, research-only AI flagged a stenosis candidate{frameText}. " +
+                "Please review the evidence. This is not a diagnosis.");
+        }
     }
 
     private void VoiceEnabled_Changed(object sender, RoutedEventArgs e)
@@ -1345,7 +1365,7 @@ public partial class MainWindow : Window
         NextFrameButton.IsEnabled = false;
         PlayButton.IsEnabled = false;
         StopButton.IsEnabled = false;
-        ModelStatusText.Text = "Medical vision model: NOT CONNECTED";
+        ModelStatusText.Text = "Research AI model: NOT CONNECTED";
         AnalyzeButton.IsEnabled = false;
         AnalyzeWholeCaseButton.IsEnabled = false;
 
@@ -1404,7 +1424,7 @@ public partial class MainWindow : Window
             {
                 Content =
                     $"{marker} {finding.Vessel} {finding.Segment} — {HumanizeFindingType(finding.FindingType)} " +
-                    $"{(finding.Source == FindingSource.StructuredResearchModel ? $"[score {finding.Confidence:0.00}]" : $"({finding.Confidence:P0})")} " +
+                    $"{(finding.EstimatedDiameterStenosisPercent is double estimate ? $"[~{estimate:0}% apparent]" : $"[score {finding.Confidence:0.00}]")} " +
                     $"[{sourceMarker}] [{finding.Status}]",
                 Tag = finding
             };
@@ -1454,6 +1474,20 @@ public partial class MainWindow : Window
     {
         ChatLog.AppendText($"Cardio: {text}{Environment.NewLine}{Environment.NewLine}");
         ChatLog.ScrollToEnd();
+    }
+
+    private static string BuildResearchEstimateLabel(GuardianFinding finding)
+    {
+        if (finding.EstimatedDiameterStenosisPercent is not double estimate)
+            return "Apparent diameter reduction: not estimable from current research evidence.";
+
+        if (finding.EstimatedDiameterStenosisLowerPercent is double lower &&
+            finding.EstimatedDiameterStenosisUpperPercent is double upper)
+        {
+            return $"Research apparent diameter reduction: ~{estimate:0}% (wide range {lower:0}-{upper:0}%).";
+        }
+
+        return $"Research apparent diameter reduction: ~{estimate:0}%.";
     }
 
     private static string HumanizeFindingType(string type) =>
