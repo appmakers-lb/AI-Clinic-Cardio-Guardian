@@ -50,12 +50,13 @@ public partial class MainWindow : Window
         VoiceStatusText.Text = $"Speech recognition: {_voice.RecognitionStatus}";
         ListenButton.IsEnabled = _voice.SpeechRecognitionAvailable;
 
-        _audit.Write("application_started", new { version = "1.1.6", mode = "RESEARCH" });
+        _audit.Write("application_started", new { version = "1.2.0", mode = "RESEARCH" });
 
         RefreshAll();
         AppendAI(
             "Research Mode ready. Import a cardiac DICOM CD/USB to review all cine runs. " +
-            "No validated medical vision model is connected, so I will not invent a stenosis or occlusion.");
+            "The optional v1.2 research model can flag evidence-linked stenosis candidates for physician review. " +
+            "It is not clinically validated and a negative result is never a clearance statement.");
     }
 
 
@@ -72,8 +73,8 @@ public partial class MainWindow : Window
             StatusText.Text = "Local AI research gateway is not running.";
             MessageBox.Show(
                 "The local AI research gateway is not running.\n\n" +
-                "To start the gateway, run ai-research\\run_gateway.bat.\n\n" +
-                "Note: the default gateway intentionally has NO medical model loaded.",
+                "To install the optional research/demo model, run ai-research\\setup_stenoz_model.bat once.\n" +
+                "Then start ai-research\\run_gateway.bat and connect again.",
                 "Local AI offline",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -94,7 +95,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        ModelStatusText.Text = "Local AI research model: CONNECTED";
+        ModelStatusText.Text = "Research AI demo: CONNECTED";
         AnalyzeButton.IsEnabled = true;
         AnalyzeWholeCaseButton.IsEnabled = _series.Count > 0;
         StatusText.Text = health.Message;
@@ -142,6 +143,13 @@ public partial class MainWindow : Window
 
             RefreshFindings();
             RefreshCoverage();
+
+            if (findings.Count == 0)
+            {
+                AppendAI(
+                    "The research model returned no candidate on the sampled frames. " +
+                    "This must not be interpreted as no stenosis or a normal study.");
+            }
 
             _audit.Write("local_ai_analysis_completed", new
             {
@@ -1142,9 +1150,12 @@ public partial class MainWindow : Window
             evidenceCount = finding.Evidence.Count
         });
 
+        var frame = finding.Evidence.FirstOrDefault()?.FrameStart;
+        var frameText = frame.HasValue ? $" at frame {frame.Value + 1}" : string.Empty;
+
         _voice.Speak(
-            $"Doctor, the research model flagged a possible {HumanizeFindingType(finding.FindingType)} in the " +
-            $"{finding.Segment} {finding.Vessel}. Highlighted for review.");
+            $"Doctor, research-only AI flagged a stenosis candidate{frameText}. " +
+            "Please review the evidence. This is not a diagnosis.");
     }
 
     private void VoiceEnabled_Changed(object sender, RoutedEventArgs e)
