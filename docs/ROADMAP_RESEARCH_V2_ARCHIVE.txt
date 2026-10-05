@@ -2414,5 +2414,418 @@ THE CARDIOLOGIST DECIDES."
 
 
 ======================================================================
-END OF ROADMAP — V2
+52. 2026-10-05 ADDENDUM — EXTERNAL SYSTEM IDEAS TO ABSORB
+======================================================================
+
+This roadmap remains additive. New clinically useful ideas from existing
+Cath-Lab, stroke-AI, physiology and intracoronary-imaging systems should be
+absorbed as modules WITHOUT turning Cardio Guardian into a monolithic hospital
+information system.
+
+A. PHILIPS HEMO — IDEAS TO ABSORB
+Cardio Guardian should borrow the useful workflow concepts, NOT attempt to
+rebuild a full hemodynamic recording system unless there is a clear product
+reason.
+
+Useful concepts:
+- continuous hemodynamic context during the procedure,
+- invasive pressure-waveform context,
+- ECG/vital-sign context where available,
+- procedure timeline,
+- automatic timestamping of events,
+- calculation/result capture,
+- structured procedure documentation,
+- synchronized event log,
+- physician annotations,
+- integration with physiology measurements such as FFR/iFR where supported.
+
+Cardio Guardian use:
+- ingest or reference hemodynamic/physiology events through supported interfaces,
+- align AI findings with the exact procedure time,
+- answer questions such as:
+  "What was the pressure/physiology context when this lesion was reviewed?"
+- never replace the primary hemodynamic recorder unless separately designed,
+  validated and approved for that intended use.
+
+
+B. RAPID AI — IDEAS TO ABSORB
+RAPID AI is a different clinical domain, but several product patterns are highly
+relevant.
+
+Useful concepts:
+- automated image processing that produces an immediate structured result,
+- strong triage / prioritization workflow,
+- visual maps that direct attention to the relevant region,
+- concise high-value alerts,
+- evidence-first presentation,
+- workflow integration rather than a standalone research viewer,
+- fast access to the exact images that triggered the alert,
+- remote collaboration / second-opinion workflow,
+- standardized result packaging,
+- time-to-decision optimization.
+
+Cardio Guardian use:
+- create "Guardian review cards" instead of raw model scores,
+- prioritize only high-value findings,
+- one-click SHOW WHY,
+- exact cine/frame evidence,
+- remote authorized cardiologist review,
+- alert timeline,
+- avoid alert overload,
+- maintain physician-in-control workflow.
+
+
+C. QFR / ANGIOGRAPHY-DERIVED PHYSIOLOGY — IDEAS TO ABSORB
+QFR-like functionality is one of the most strategically important future
+modules because anatomy alone does not always establish physiologic significance.
+
+Useful concepts:
+- derive vessel geometry from coronary angiography,
+- reconstruct supported coronary segments across views where possible,
+- estimate functional significance from angiographic data,
+- show pressure-drop / physiology-style information,
+- distinguish focal from diffuse disease where validated,
+- link physiology result to the exact anatomical lesion,
+- compare with invasive FFR/iFR when available.
+
+Cardio Guardian use:
+- build an ANGIO-PHYSIOLOGY ADAPTER layer,
+- do not make "we calculate FFR too" the main product moat,
+- allow multiple future engines:
+  * internal research engine,
+  * QFR-compatible vendor adapter,
+  * FFRangio-compatible adapter,
+  * vFFR-compatible adapter,
+  * invasive FFR/iFR importer.
+- correlate anatomy + physiology inside one lesion object.
+- create a disagreement card when anatomy and physiology do not agree.
+
+
+D. IVUS — IDEAS TO ABSORB
+IVUS = Intravascular Ultrasound.
+A small ultrasound catheter images the coronary artery from inside the vessel.
+
+High-value information that IVUS can contribute:
+- lumen size,
+- vessel size,
+- plaque burden,
+- calcification,
+- lesion morphology,
+- reference segments,
+- stent expansion,
+- stent apposition where supported,
+- edge problems,
+- before/after PCI comparison.
+
+Cardio Guardian use:
+- IVUS import adapter,
+- synchronize IVUS pullback with angiographic lesion identity,
+- automatically link the IVUS finding to LESION-XX,
+- show lumen / vessel measurements where supported,
+- post-PCI stent review support,
+- highlight disagreement between angiography and IVUS,
+- allow doctor to ask:
+  "Show IVUS for this lesion."
+  "What did IVUS show here?"
+  "Compare pre- and post-stent."
+
+
+E. OCT — IDEAS TO ABSORB
+OCT = Optical Coherence Tomography.
+It provides very high-resolution intravascular imaging and is complementary to
+angiography and IVUS.
+
+Useful concepts:
+- high-resolution lumen assessment,
+- stent expansion/apposition review,
+- edge-dissection review,
+- tissue/plaque characteristics where validated,
+- pre/post intervention comparison,
+- exact lesion-level evidence linking.
+
+Cardio Guardian use:
+- OCT adapter parallel to IVUS adapter,
+- lesion-centered evidence bundle,
+- multimodal comparison,
+- post-PCI quality review,
+- disagreement alerts rather than forcing one modality to "win."
+
+
+======================================================================
+53. CARDIO GUARDIAN AS AN AI TOOL LAYER — PREFERRED PRODUCT STRATEGY
+======================================================================
+
+STRATEGIC DIRECTION:
+Cardio Guardian SHOULD NOT require the hospital to abandon its existing
+Cath-Lab software.
+
+Preferred positioning:
+"CARDIO GUARDIAN = AI TOOL LAYER / COMPANION WORKSTATION / SECOND SET OF EYES"
+
+This is likely more deployable than attempting to replace:
+- Hemo systems,
+- X-ray acquisition consoles,
+- PACS,
+- hospital EMR,
+- IVUS/OCT vendor software,
+- physiology consoles.
+
+The hospital continues using its existing systems.
+Cardio Guardian adds AI capabilities around them.
+
+TARGET ARCHITECTURE:
+
+EXISTING CATH-LAB SYSTEMS
+|
++-- Angiography / X-ray console
++-- Hemo / physiologic recorder
++-- PACS / DICOM archive
++-- IVUS / OCT console
++-- FFR / iFR / QFR / physiology tools
++-- EMR / procedure documentation
+|
+v
+CARDIO GUARDIAN ADAPTER LAYER
+|
++-- DICOM / DICOMDIR import
++-- DICOM network receive where authorized
++-- supported live-video/frame adapter
++-- HL7/FHIR/document adapter where supported
++-- physiology data adapter
++-- IVUS/OCT adapter
++-- vendor API/SDK adapter where available
++-- file/report/structured-result importer
+|
+v
+CARDIO GUARDIAN AI TOOLS
+|
++-- Vessel segmentation
++-- Vessel identity
++-- Lesion detection
++-- Stenosis research estimate
++-- Occlusion / CTO research module
++-- Multi-view lesion identity
++-- QCA
++-- Angio-derived physiology
++-- Coverage Guardian
++-- Whole-case memory
++-- Evidence bundle
++-- Guardian alerts
++-- Voice Copilot
++-- Multimodal disagreement engine
++-- Post-PCI review
+|
+v
+PHYSICIAN REVIEW
+
+
+CORE DEPLOYMENT PRINCIPLE:
+Integrate through supported, documented interfaces whenever possible.
+Do NOT modify or inject code into a vendor's clinical software without an
+authorized integration path.
+
+Initial integration modes, from easiest to hardest:
+1. Import files/reports exported by the existing system.
+2. Watch an approved local folder/export location.
+3. DICOM receive/query-retrieve where hospital/vendor allows it.
+4. Structured HL7/FHIR/API integration where available.
+5. Vendor SDK/API integration.
+6. Approved live frame/video feed integration.
+7. Deep synchronized device integration only with vendor/hospital cooperation.
+
+
+======================================================================
+54. MODULAR "AI TOOLS" PRODUCT PACKAGING
+======================================================================
+
+Instead of one giant feature set, Cardio Guardian should be able to expose
+individual tools/modules.
+
+TOOL 01 — ANGIO GUARDIAN
+- review coronary cine,
+- highlight suspicious narrowing/occlusion,
+- show evidence,
+- voice alert.
+
+TOOL 02 — QCA ASSIST
+- reference diameter,
+- minimum lumen diameter,
+- lesion length,
+- percent diameter stenosis,
+- uncertainty,
+- physician correction.
+
+TOOL 03 — COVERAGE GUARDIAN
+- what has been adequately visualized,
+- what remains incomplete,
+- never equate "not seen" with normal.
+
+TOOL 04 — WHOLE-CASE MEMORY
+- retain all cine runs,
+- maintain lesion identity,
+- reduce duplicate alerts,
+- correlate views.
+
+TOOL 05 — PHYSIOLOGY LINK
+- FFR/iFR importer,
+- angiography-derived physiology adapters,
+- anatomy-vs-physiology comparison.
+
+TOOL 06 — IVUS/OCT FUSION
+- import intracoronary imaging,
+- link to angiographic lesion,
+- show multimodal evidence,
+- post-PCI review.
+
+TOOL 07 — HEMO CONTEXT
+- synchronize pressure / ECG / procedural events where available,
+- procedure timeline,
+- attach hemodynamic context to AI findings.
+
+TOOL 08 — VOICE COPILOT
+- "Where is it?"
+- "Show me why."
+- "How severe is the research estimate?"
+- "Show another view."
+- "Anything else?"
+- "What's incomplete?"
+- "Show IVUS."
+- "Compare physiology."
+
+TOOL 09 — REMOTE SECOND CARDIOLOGIST
+- secure remote review,
+- synchronized evidence,
+- annotations,
+- audit.
+
+TOOL 10 — POST-PCI GUARDIAN
+- pre/post lesion comparison,
+- residual narrowing review,
+- stent-related IVUS/OCT evidence where available,
+- unresolved-findings checklist.
+
+
+======================================================================
+55. DO NOT REBUILD WHAT EXISTING SYSTEMS ALREADY DO WELL
+======================================================================
+
+Cardio Guardian should avoid unnecessary duplication.
+
+DO NOT prioritize rebuilding:
+- primary bedside/hemodynamic monitoring,
+- complete PACS,
+- full hospital EMR,
+- generic inventory/billing,
+- full cath-lab documentation platform,
+- X-ray acquisition console,
+- certified IVUS/OCT acquisition software.
+
+Instead:
+- CONNECT,
+- READ,
+- CORRELATE,
+- ANALYZE,
+- HIGHLIGHT,
+- EXPLAIN,
+- ALERT,
+- REMEMBER,
+- AUDIT.
+
+This keeps Cardio Guardian focused on its differentiated AI layer.
+
+
+======================================================================
+56. MULTIMODAL LESION OBJECT — EXPANDED
+======================================================================
+
+Every important lesion should become a persistent structured object.
+
+Example:
+
+LESION-01
+- angiography evidence,
+- vessel/segment identity,
+- best frame,
+- alternate projections,
+- stenosis/QCA estimate,
+- uncertainty,
+- physiology:
+  * QFR-like result,
+  * FFR,
+  * iFR,
+- IVUS evidence,
+- OCT evidence,
+- hemodynamic/procedure timestamp,
+- pre/post PCI state,
+- physician confirmed/dismissed,
+- disagreement state,
+- remote-review annotations,
+- full audit.
+
+The physician should be able to open ONE lesion and see all connected evidence
+instead of switching manually between unrelated systems.
+
+
+======================================================================
+57. DISAGREEMENT ENGINE — EXPANDED FROM EXISTING ROADMAP
+======================================================================
+
+The system should explicitly detect and present discordance.
+
+Examples:
+- angiography suggests severe narrowing but physiology is not significant,
+- angiography appears moderate but IVUS/OCT shows substantial plaque/lumen issue,
+- direct lesion detector is positive but vessel segmentation does not support it,
+- one projection appears severe and another does not,
+- AI differs from physician judgment,
+- pre-PCI and post-PCI measurements conflict,
+- QCA and physiology disagree.
+
+UI:
+"DISCORDANT EVIDENCE — PHYSICIAN REVIEW"
+
+The system must show each source separately.
+It must not average contradictory modalities into one misleading number.
+
+
+======================================================================
+58. UPDATED STRATEGIC PRODUCT DEFINITION
+======================================================================
+
+Cardio Guardian should evolve into a VENDOR-NEUTRAL AI TOOL LAYER for the
+Cath Lab rather than a replacement for every existing hospital system.
+
+The strongest long-term product is:
+
+EXISTING HOSPITAL SOFTWARE
++
+CARDIO GUARDIAN AI TOOLS
++
+EVIDENCE / VOICE / MEMORY / MULTIMODAL CORRELATION
+
+This allows a hospital to keep:
+- Hemo,
+- its X-ray system,
+- its IVUS/OCT tools,
+- its physiology tools,
+- its PACS/EMR,
+
+while Cardio Guardian adds:
+- whole-case intelligence,
+- lesion detection,
+- evidence replay,
+- coverage tracking,
+- multimodal lesion memory,
+- disagreement detection,
+- voice assistance,
+- remote review,
+- audit.
+
+KEY PRODUCT PRINCIPLE:
+
+"DO NOT REPLACE THE CATH LAB.
+ADD AN INTELLIGENT SECOND LAYER ON TOP OF IT."
+
+======================================================================
+END OF ROADMAP — V2 + 2026-10-05 ADDENDUM
 ======================================================================
