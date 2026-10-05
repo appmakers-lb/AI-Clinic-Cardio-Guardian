@@ -883,9 +883,12 @@ public partial class MainWindow : Window
 
         NavigateToFirstEvidence(_selectedFinding);
 
-        MessageBox.Show(evidenceText.ToString(), "Evidence bundle — Research Mode",
-            MessageBoxButton.OK, MessageBoxImage.Information);
+        FindingDetailText.Text =
+            $"{_selectedFinding.Vessel} {_selectedFinding.Segment} — {_selectedFinding.FindingType}\n" +
+            $"Model score: {_selectedFinding.Confidence:0.00} (not disease probability)\n" +
+            $"Evidence: {string.Join("; ", _selectedFinding.Evidence.Select(e => $"frame {(e.FrameStart ?? 0) + 1} — {e.Description.OrFallback("research candidate")}"))}";
 
+        StatusText.Text = "Evidence frame loaded and AI candidate region highlighted.";
         _audit.Write("evidence_bundle_shown", new { _selectedFinding.Id });
     }
 
