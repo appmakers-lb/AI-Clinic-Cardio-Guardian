@@ -1,7 +1,7 @@
 <Window x:Class="AIClinic.CardioGuardian.Desktop.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="AI Clinic Cardio Guardian — Research v1.1.6"
+        Title="AI Clinic Cardio Guardian — Research v1.2.0"
         Height="900" Width="1440" MinHeight="680" MinWidth="900"
         WindowStartupLocation="CenterScreen"
         WindowState="Maximized"
@@ -14,9 +14,9 @@
         <Border DockPanel.Dock="Top" Background="{StaticResource Danger}" Padding="8">
             <Grid>
                 <TextBlock HorizontalAlignment="Center" FontSize="15" FontWeight="Bold"
-                           Text="RESEARCH MODE — NOT FOR CLINICAL DECISIONS"/>
+                           Text="RESEARCH AI DEMO — NOT FOR CLINICAL DECISIONS"/>
                 <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center"
-                           FontSize="12" FontWeight="SemiBold" Text="v1.1.6"/>
+                           FontSize="12" FontWeight="SemiBold" Text="v1.2.0"/>
             </Grid>
         </Border>
 
@@ -47,7 +47,7 @@
                         <StackPanel Orientation="Horizontal">
                             <Ellipse Width="9" Height="9" Fill="#F59E0B" Margin="0,0,8,0"/>
                             <TextBlock x:Name="ModelStatusText"
-                                       Text="Medical vision model: NOT CONNECTED"
+                                       Text="Research AI model: NOT CONNECTED"
                                        FontWeight="Bold" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Border>
@@ -57,9 +57,9 @@
                     <Button Content="IMPORT AI FINDINGS JSON" Click="ImportFindings_Click" MinWidth="185"
                             ToolTip="Imports structured, versioned research-model output. It does not create findings from raw images by itself."/>
                     <Button Content="CONNECT LOCAL AI" Click="ConnectLocalAi_Click" MinWidth="145"/>
-                    <Button x:Name="AnalyzeButton" Content="RUN AI ON SELECTED CINE"
+                    <Button x:Name="AnalyzeButton" Content="RUN RESEARCH AI ON SELECTED CINE"
                             Click="AnalyzeSelectedCine_Click" MinWidth="200" IsEnabled="False"/>
-                    <Button x:Name="AnalyzeWholeCaseButton" Content="RUN AI WHOLE CASE"
+                    <Button x:Name="AnalyzeWholeCaseButton" Content="RUN RESEARCH AI WHOLE CASE"
                             Click="AnalyzeWholeCase_Click" MinWidth="175" IsEnabled="False"
                             ToolTip="Runs the connected research model across every imported cine series. Batch mode does not speak alerts while processing."/>
                     <Button x:Name="CancelAnalysisButton" Content="CANCEL ANALYSIS"
@@ -223,7 +223,7 @@
                         BorderThickness="1" CornerRadius="5" Padding="7" Margin="0,7,0,0">
                     <TextBlock TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="11">
                         <Run FontWeight="Bold" Foreground="#FDE68A" Text="Research build: "/>
-                        <Run Text="DICOM/cine playback, whole-case memory, evidence-linked findings and Guardian workflow are implemented. Raw-image diagnosis remains disabled until a validated model is connected."/>
+                        <Run Text="v1.2 can run an optional ARCADE-trained research stenosis-candidate model on X-ray coronary angiography. Outputs require physician review, are not clinically validated, and a negative result is never clinical clearance."/>
                     </TextBlock>
                 </Border>
             </Grid>
@@ -314,7 +314,8 @@
                             <StackPanel Margin="6">
                                 <TextBlock Text="VOICE" FontWeight="Bold" Foreground="#93C5FD" Margin="0,0,0,5"/>
                                 <CheckBox x:Name="VoiceEnabled"
-                                          Content="Speak high-priority structured alerts"
+                                          Content="Speak high-priority research candidate alerts"
+                                          IsChecked="True"
                                           Margin="4" Checked="VoiceEnabled_Changed" Unchecked="VoiceEnabled_Changed"/>
                                 <TextBlock x:Name="VoiceStatusText" Foreground="{StaticResource Muted}"
                                            TextWrapping="Wrap" Margin="4,2,4,10"/>
