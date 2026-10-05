@@ -112,7 +112,7 @@ class StenozResearchPlugin:
                 f"{source_id}|{candidate.frame}|{candidate.x:.3f}|{candidate.y:.3f}".encode("utf-8")
             ).hexdigest()[:12]
 
-            high_priority = candidate.confidence >= 0.90
+            high_priority = candidate.confidence >= 0.80
             findings.append(
                 {
                     "id": f"stenoz-{digest}",
