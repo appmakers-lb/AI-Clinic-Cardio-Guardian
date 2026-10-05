@@ -3,6 +3,7 @@ fastapi
 uvicorn
 pydantic
 numpy
-pydicom
+pydicom>=3.0.1
 opencv-python
-# Add torch/torchvision/onnx/onnxruntime-gpu only when a model sprint requires them.
+# Heavy research-model dependencies are intentionally optional.
+# Install requirements-stenoz.txt only for the research/demo model.
