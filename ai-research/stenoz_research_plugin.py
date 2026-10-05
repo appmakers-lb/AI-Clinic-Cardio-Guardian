@@ -80,9 +80,14 @@ class StenozResearchPlugin:
 
         source_id = str(request.get("sourceId", "")).strip()
         projection = str(request.get("projection", "")).strip() or None
+        modality = str(request.get("modality", "")).strip().upper()
         file_paths = [Path(p) for p in request.get("filePaths", [])]
         if not source_id or not file_paths:
             raise ValueError("sourceId and filePaths are required.")
+        if modality and modality not in {"XA", "XRF"}:
+            raise ValueError(
+                f"Research adapter supports X-ray angiography only; received modality '{modality}'."
+            )
 
         frame_refs = list(self._index_frames(file_paths))
         if not frame_refs:
