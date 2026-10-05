@@ -38,6 +38,10 @@ public sealed record EvidenceReference(
     string? Projection,
     string? Description)
 {
+    public double? NormalizedCenterX { get; init; }
+    public double? NormalizedCenterY { get; init; }
+    public double? NormalizedRadius { get; init; }
+
     public void Validate()
     {
         if (string.IsNullOrWhiteSpace(SourceId))
@@ -48,6 +52,32 @@ public sealed record EvidenceReference(
 
         if (FrameStart.HasValue && FrameEnd.HasValue && FrameEnd.Value < FrameStart.Value)
             throw new InvalidOperationException("Evidence FrameEnd cannot be before FrameStart.");
+
+        ValidateNormalizedCoordinate(NormalizedCenterX, nameof(NormalizedCenterX));
+        ValidateNormalizedCoordinate(NormalizedCenterY, nameof(NormalizedCenterY));
+
+        if (NormalizedRadius.HasValue &&
+            (double.IsNaN(NormalizedRadius.Value) ||
+             double.IsInfinity(NormalizedRadius.Value) ||
+             NormalizedRadius.Value is <= 0 or > 1))
+        {
+            throw new InvalidOperationException("Evidence NormalizedRadius must be greater than 0 and at most 1.");
+        }
+
+        if (NormalizedCenterX.HasValue != NormalizedCenterY.HasValue)
+            throw new InvalidOperationException("Evidence overlay center requires both X and Y coordinates.");
+    }
+
+    private static void ValidateNormalizedCoordinate(double? value, string name)
+    {
+        if (!value.HasValue) return;
+
+        if (double.IsNaN(value.Value) ||
+            double.IsInfinity(value.Value) ||
+            value.Value is < 0 or > 1)
+        {
+            throw new InvalidOperationException($"Evidence {name} must be between 0 and 1.");
+        }
     }
 }
 
@@ -305,6 +335,9 @@ public sealed class StructuredEvidenceItem
     public int? FrameEnd { get; init; }
     public string? Projection { get; init; }
     public string? Description { get; init; }
+    public double? NormalizedCenterX { get; init; }
+    public double? NormalizedCenterY { get; init; }
+    public double? NormalizedRadius { get; init; }
 }
 
 public sealed class StructuredCoverageItem
