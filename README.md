@@ -194,3 +194,13 @@ Important limitations:
 - it does not identify the vessel/segment, stenosis percentage, lesion severity, or treatment;
 - it is restricted to X-ray angiography research input;
 - physician review of the original cine remains mandatory.
+
+
+## v1.2.1 vessel-supported narrowing research gate
+
+v1.2.1 tightens the demo so the direct stenosis heatmap is **not** shown by itself. A research finding is surfaced only when:
+- the candidate persists across at least two sampled cine frames;
+- a separate vessel-segmentation model supports the candidate region;
+- conservative local vessel geometry can produce a bounded apparent diameter-reduction estimate.
+
+When those gates pass, the UI can show an approximate apparent narrowing percentage with a deliberately wide uncertainty range. This remains an uncalibrated 2D research estimate, **not clinical QCA**. The current build still does not identify LAD/LCx/RCA automatically and does not infer complete occlusion (100%); those require separate validated workstreams.
