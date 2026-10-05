@@ -124,6 +124,9 @@ public sealed class GuardianFinding
     public IReadOnlyList<EvidenceReference> Evidence { get; init; } = Array.Empty<EvidenceReference>();
     public string? Explanation { get; init; }
     public string? MeasurementSummary { get; init; }
+    public double? EstimatedDiameterStenosisPercent { get; init; }
+    public double? EstimatedDiameterStenosisLowerPercent { get; init; }
+    public double? EstimatedDiameterStenosisUpperPercent { get; init; }
     public FindingStatus Status { get; private set; } = FindingStatus.Proposed;
     public DateTime CreatedAtUtc { get; init; } = DateTime.UtcNow;
     public DateTime? DispositionUpdatedAtUtc { get; private set; }
@@ -162,6 +165,31 @@ public sealed class GuardianFinding
         if (Evidence.Count == 0)
             throw new InvalidOperationException("A finding must contain at least one evidence reference.");
 
+        ValidatePercent(EstimatedDiameterStenosisPercent, nameof(EstimatedDiameterStenosisPercent));
+        ValidatePercent(EstimatedDiameterStenosisLowerPercent, nameof(EstimatedDiameterStenosisLowerPercent));
+        ValidatePercent(EstimatedDiameterStenosisUpperPercent, nameof(EstimatedDiameterStenosisUpperPercent));
+
+        if (EstimatedDiameterStenosisLowerPercent.HasValue &&
+            EstimatedDiameterStenosisUpperPercent.HasValue &&
+            EstimatedDiameterStenosisLowerPercent.Value > EstimatedDiameterStenosisUpperPercent.Value)
+        {
+            throw new InvalidOperationException("Estimated stenosis lower bound cannot exceed upper bound.");
+        }
+
+        if (EstimatedDiameterStenosisPercent.HasValue &&
+            EstimatedDiameterStenosisLowerPercent.HasValue &&
+            EstimatedDiameterStenosisPercent.Value < EstimatedDiameterStenosisLowerPercent.Value)
+        {
+            throw new InvalidOperationException("Estimated stenosis value cannot be below its lower bound.");
+        }
+
+        if (EstimatedDiameterStenosisPercent.HasValue &&
+            EstimatedDiameterStenosisUpperPercent.HasValue &&
+            EstimatedDiameterStenosisPercent.Value > EstimatedDiameterStenosisUpperPercent.Value)
+        {
+            throw new InvalidOperationException("Estimated stenosis value cannot exceed its upper bound.");
+        }
+
         if (Source == FindingSource.StructuredResearchModel &&
             string.IsNullOrWhiteSpace(SourceVersion))
         {
@@ -171,6 +199,18 @@ public sealed class GuardianFinding
 
         foreach (var evidence in Evidence)
             evidence.Validate();
+    }
+
+    private static void ValidatePercent(double? value, string name)
+    {
+        if (!value.HasValue) return;
+
+        if (double.IsNaN(value.Value) ||
+            double.IsInfinity(value.Value) ||
+            value.Value is < 0 or > 100)
+        {
+            throw new InvalidOperationException($"{name} must be between 0 and 100.");
+        }
     }
 }
 
@@ -325,6 +365,9 @@ public sealed class StructuredFindingItem
     public string Priority { get; init; } = "Review";
     public string? Explanation { get; init; }
     public string? MeasurementSummary { get; init; }
+    public double? EstimatedDiameterStenosisPercent { get; init; }
+    public double? EstimatedDiameterStenosisLowerPercent { get; init; }
+    public double? EstimatedDiameterStenosisUpperPercent { get; init; }
     public IReadOnlyList<StructuredEvidenceItem> Evidence { get; init; } = Array.Empty<StructuredEvidenceItem>();
 }
 
