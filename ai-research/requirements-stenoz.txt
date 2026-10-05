@@ -1,6 +1,7 @@
 -r requirements.txt
 torch>=2.0
 scipy>=1.11
+scikit-image>=0.24
 huggingface_hub>=0.20
 pylibjpeg>=2.0
 pylibjpeg-libjpeg>=2.1
