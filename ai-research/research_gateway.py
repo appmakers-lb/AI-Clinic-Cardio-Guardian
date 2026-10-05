@@ -20,7 +20,7 @@ try:
 except Exception:
     MODEL_PLUGIN = None
 
-SERVICE_VERSION = "1.1.6"
+SERVICE_VERSION = "1.2.0"
 app = FastAPI(
     title="AI Clinic Cardio Guardian Research Gateway",
     version=SERVICE_VERSION,
@@ -61,9 +61,12 @@ def health() -> dict[str, Any]:
         "modelId": getattr(MODEL_PLUGIN, "model_id", None) if loaded else None,
         "modelVersion": getattr(MODEL_PLUGIN, "model_version", None) if loaded else None,
         "message": (
-            "Research model plugin loaded."
+            "Research/demo XCA model loaded. Outputs are unvalidated research candidates only."
             if loaded
-            else "No research medical-vision model loaded. Analysis is blocked."
+            else (
+                getattr(MODEL_PLUGIN, "load_error", None)
+                or "No research medical-vision model loaded. Analysis is blocked."
+            )
         ),
     }
 
@@ -73,7 +76,7 @@ def analyze_series(request: SeriesRequest) -> dict[str, Any]:
     if not MODEL_PLUGIN or not getattr(MODEL_PLUGIN, "is_loaded", False):
         raise HTTPException(
             status_code=503,
-            detail="No validated/versioned research model plugin is loaded.",
+            detail="No versioned research model plugin is loaded.",
         )
 
     model_id = str(getattr(MODEL_PLUGIN, "model_id", "")).strip()
