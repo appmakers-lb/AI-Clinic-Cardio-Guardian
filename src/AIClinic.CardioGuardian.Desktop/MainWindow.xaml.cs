@@ -262,6 +262,13 @@ public partial class MainWindow : Window
                 $"{totalReturned} finding(s), {totalAdded} added, {totalSkipped} duplicate/invalid; " +
                 $"coverage {coverageApplied} applied, {coverageRejected} rejected.";
 
+            if (totalReturned == 0)
+            {
+                AppendAI(
+                    "Whole-case research analysis returned no candidates in the sampled frames. " +
+                    "This is not evidence of a normal study and is not clinical clearance.");
+            }
+
             _audit.Write("whole_case_ai_analysis_completed", new
             {
                 seriesCount = _series.Count,
