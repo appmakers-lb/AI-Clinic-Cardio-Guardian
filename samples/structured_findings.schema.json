@@ -134,6 +134,30 @@
                 }
               }
             }
+          },
+          "estimatedDiameterStenosisPercent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "estimatedDiameterStenosisLowerPercent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "estimatedDiameterStenosisUpperPercent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100
           }
         }
       }
