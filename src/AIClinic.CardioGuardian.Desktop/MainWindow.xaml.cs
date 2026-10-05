@@ -40,6 +40,8 @@ public partial class MainWindow : Window
     private GuardianFinding? _selectedFinding;
     private string? _currentSourceId;
     private bool _isPlaying;
+    private bool _findingFocusMode;
+    private const double FindingFocusScale = 3.0;
     private CancellationTokenSource? _analysisCts;
 
     public MainWindow()
@@ -49,6 +51,7 @@ public partial class MainWindow : Window
         _playTimer.Tick += PlayTimer_Tick;
         _playTimer.Interval = TimeSpan.FromMilliseconds(100);
         OverlayCanvas.SizeChanged += (_, _) => DrawSelectedFindingOverlay();
+        ImageSurface.MouseLeftButtonDown += ImageSurface_MouseLeftButtonDown;
 
         AuditPathText.Text = $"Audit: {_audit.LogFilePath}";
         VoiceStatusText.Text = $"Speech recognition: {_voice.RecognitionStatus}";
@@ -448,6 +451,7 @@ public partial class MainWindow : Window
     {
         try
         {
+            ResetFindingFocusMode(false);
             StopPlayback();
 
             _dicomCine.LoadSeries(series);
@@ -563,6 +567,7 @@ public partial class MainWindow : Window
 
         try
         {
+            ResetFindingFocusMode(false);
             StopPlayback();
 
             _video.Load(CinePlayer, dialog.FileName);
@@ -813,9 +818,20 @@ public partial class MainWindow : Window
 
     private void FindingList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        ResetFindingFocusMode(false);
         _selectedFinding = (FindingList.SelectedItem as ListBoxItem)?.Tag as GuardianFinding;
         UpdateFindingDetail();
         DrawSelectedFindingOverlay();
+    }
+
+    private void FindingList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (_selectedFinding is null)
+            return;
+
+        NavigateToFirstEvidence(_selectedFinding);
+        Dispatcher.BeginInvoke(new Action(EnterFindingFocusMode), DispatcherPriority.Loaded);
+        e.Handled = true;
     }
 
     private void UpdateFindingDetail()
@@ -924,55 +940,28 @@ public partial class MainWindow : Window
     {
         OverlayCanvas.Children.Clear();
 
-        if (_viewerMode != ViewerMode.Dicom ||
-            _selectedFinding is null ||
-            DicomFrameImage.Source is not BitmapSource bitmap ||
-            string.IsNullOrWhiteSpace(_currentSourceId))
+        if (!TryGetSelectedOverlayGeometry(
+                out _,
+                out var centerX,
+                out var centerY,
+                out var baseRadius,
+                out var canvasWidth,
+                out var canvasHeight))
         {
             return;
         }
 
-        var frame = _dicomCine.CurrentFrameIndex;
-        var evidence = _selectedFinding.Evidence.FirstOrDefault(x =>
-            string.Equals(x.SourceId, _currentSourceId, StringComparison.OrdinalIgnoreCase) &&
-            x.FrameStart.HasValue &&
-            x.FrameEnd.HasValue &&
-            frame >= x.FrameStart.Value &&
-            frame <= x.FrameEnd.Value &&
-            x.NormalizedCenterX.HasValue &&
-            x.NormalizedCenterY.HasValue);
-
-        if (evidence is null)
-            return;
-
-        var canvasWidth = OverlayCanvas.ActualWidth;
-        var canvasHeight = OverlayCanvas.ActualHeight;
-        if (canvasWidth <= 1 || canvasHeight <= 1 || bitmap.PixelWidth <= 0 || bitmap.PixelHeight <= 0)
-            return;
-
-        var imageScale = Math.Min(
-            canvasWidth / bitmap.PixelWidth,
-            canvasHeight / bitmap.PixelHeight);
-
-        var displayedWidth = bitmap.PixelWidth * imageScale;
-        var displayedHeight = bitmap.PixelHeight * imageScale;
-        var offsetX = (canvasWidth - displayedWidth) / 2.0;
-        var offsetY = (canvasHeight - displayedHeight) / 2.0;
-
-        var centerX = offsetX + evidence.NormalizedCenterX!.Value * displayedWidth;
-        var centerY = offsetY + evidence.NormalizedCenterY!.Value * displayedHeight;
-        var normalizedRadius = evidence.NormalizedRadius ?? 0.06;
-        var radius = Math.Clamp(
-            normalizedRadius * Math.Min(displayedWidth, displayedHeight),
-            18,
-            90);
+        var compensation = _findingFocusMode ? 1.0 / FindingFocusScale : 1.0;
+        var radius = Math.Max(8, baseRadius * compensation);
+        var strokeWidth = Math.Max(1.2, 4 * compensation);
+        var crossWidth = Math.Max(1.0, 2 * compensation);
 
         var ring = new Ellipse
         {
             Width = radius * 2,
             Height = radius * 2,
             Stroke = Brushes.OrangeRed,
-            StrokeThickness = 4,
+            StrokeThickness = strokeWidth,
             Fill = Brushes.Transparent
         };
 
@@ -987,7 +976,7 @@ public partial class MainWindow : Window
             Y1 = centerY,
             Y2 = centerY,
             Stroke = Brushes.OrangeRed,
-            StrokeThickness = 2
+            StrokeThickness = crossWidth
         };
         var vertical = new Line
         {
@@ -996,32 +985,205 @@ public partial class MainWindow : Window
             Y1 = centerY - radius * 0.55,
             Y2 = centerY + radius * 0.55,
             Stroke = Brushes.OrangeRed,
-            StrokeThickness = 2
+            StrokeThickness = crossWidth
         };
         OverlayCanvas.Children.Add(horizontal);
         OverlayCanvas.Children.Add(vertical);
+
+        var labelText = _selectedFinding!.EstimatedDiameterStenosisPercent is double estimate
+            ? (_findingFocusMode
+                ? $"FOCUS • ~{estimate:0}% apparent narrowing • Esc to exit"
+                : $"RESEARCH AI • ~{estimate:0}% apparent narrowing")
+            : (_findingFocusMode
+                ? $"FOCUS • candidate score {_selectedFinding.Confidence:0.00} • Esc to exit"
+                : $"RESEARCH AI CANDIDATE • score {_selectedFinding.Confidence:0.00}");
 
         var label = new Border
         {
             Background = new SolidColorBrush(Color.FromArgb(220, 15, 23, 42)),
             BorderBrush = Brushes.OrangeRed,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(6, 3, 6, 3),
+            BorderThickness = new Thickness(Math.Max(0.5, compensation)),
+            CornerRadius = new CornerRadius(Math.Max(1.5, 4 * compensation)),
+            Padding = new Thickness(6 * compensation, 3 * compensation, 6 * compensation, 3 * compensation),
             Child = new TextBlock
             {
-                Text = _selectedFinding.EstimatedDiameterStenosisPercent is double estimate
-                    ? $"RESEARCH AI • ~{estimate:0}% apparent narrowing"
-                    : $"RESEARCH AI CANDIDATE • score {_selectedFinding.Confidence:0.00}",
+                Text = labelText,
                 Foreground = Brushes.White,
                 FontWeight = FontWeights.SemiBold,
-                FontSize = 11
+                FontSize = Math.Max(4.5, 11 * compensation)
             }
         };
 
-        Canvas.SetLeft(label, Math.Clamp(centerX + radius + 6, 4, Math.Max(4, canvasWidth - 240)));
-        Canvas.SetTop(label, Math.Clamp(centerY - 14, 4, Math.Max(4, canvasHeight - 32)));
+        Canvas.SetLeft(label, Math.Clamp(
+            centerX + radius + (6 * compensation),
+            4 * compensation,
+            Math.Max(4 * compensation, canvasWidth - (240 * compensation))));
+        Canvas.SetTop(label, Math.Clamp(
+            centerY - (14 * compensation),
+            4 * compensation,
+            Math.Max(4 * compensation, canvasHeight - (32 * compensation))));
         OverlayCanvas.Children.Add(label);
+    }
+
+    private bool TryGetSelectedOverlayGeometry(
+        out EvidenceReference evidence,
+        out double centerX,
+        out double centerY,
+        out double radius,
+        out double canvasWidth,
+        out double canvasHeight)
+    {
+        evidence = null!;
+        centerX = centerY = radius = canvasWidth = canvasHeight = 0;
+
+        if (_viewerMode != ViewerMode.Dicom ||
+            _selectedFinding is null ||
+            DicomFrameImage.Source is not BitmapSource bitmap ||
+            string.IsNullOrWhiteSpace(_currentSourceId))
+        {
+            return false;
+        }
+
+        var frame = _dicomCine.CurrentFrameIndex;
+        var match = _selectedFinding.Evidence.FirstOrDefault(x =>
+            string.Equals(x.SourceId, _currentSourceId, StringComparison.OrdinalIgnoreCase) &&
+            x.FrameStart.HasValue &&
+            x.FrameEnd.HasValue &&
+            frame >= x.FrameStart.Value &&
+            frame <= x.FrameEnd.Value &&
+            x.NormalizedCenterX.HasValue &&
+            x.NormalizedCenterY.HasValue);
+
+        if (match is null)
+            return false;
+
+        canvasWidth = OverlayCanvas.ActualWidth;
+        canvasHeight = OverlayCanvas.ActualHeight;
+        if (canvasWidth <= 1 || canvasHeight <= 1 || bitmap.PixelWidth <= 0 || bitmap.PixelHeight <= 0)
+            return false;
+
+        var imageScale = Math.Min(
+            canvasWidth / bitmap.PixelWidth,
+            canvasHeight / bitmap.PixelHeight);
+
+        var displayedWidth = bitmap.PixelWidth * imageScale;
+        var displayedHeight = bitmap.PixelHeight * imageScale;
+        var offsetX = (canvasWidth - displayedWidth) / 2.0;
+        var offsetY = (canvasHeight - displayedHeight) / 2.0;
+
+        centerX = offsetX + match.NormalizedCenterX!.Value * displayedWidth;
+        centerY = offsetY + match.NormalizedCenterY!.Value * displayedHeight;
+
+        var normalizedRadius = match.NormalizedRadius ?? 0.06;
+        radius = Math.Clamp(
+            normalizedRadius * Math.Min(displayedWidth, displayedHeight),
+            18,
+            90);
+
+        evidence = match;
+        return true;
+    }
+
+    private void ImageSurface_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount != 2)
+            return;
+
+        if (_findingFocusMode)
+        {
+            ResetFindingFocusMode();
+            e.Handled = true;
+            return;
+        }
+
+        if (!TryGetSelectedOverlayGeometry(
+                out _,
+                out var centerX,
+                out var centerY,
+                out var radius,
+                out _,
+                out _))
+        {
+            return;
+        }
+
+        var point = e.GetPosition(OverlayCanvas);
+        var distance = Math.Sqrt(
+            Math.Pow(point.X - centerX, 2) +
+            Math.Pow(point.Y - centerY, 2));
+
+        if (distance > Math.Max(36, radius * 1.25))
+            return;
+
+        EnterFindingFocusMode();
+        e.Handled = true;
+    }
+
+    private void EnterFindingFocusMode()
+    {
+        if (!TryGetSelectedOverlayGeometry(
+                out var evidence,
+                out var centerX,
+                out var centerY,
+                out _,
+                out var canvasWidth,
+                out var canvasHeight))
+        {
+            StatusText.Text = "Focus mode unavailable for this finding/frame.";
+            return;
+        }
+
+        StopPlayback();
+
+        var scale = FindingFocusScale;
+        var translateX = (canvasWidth / 2.0) - (centerX * scale);
+        var translateY = (canvasHeight / 2.0) - (centerY * scale);
+
+        ImageSurface.RenderTransformOrigin = new Point(0, 0);
+        ImageSurface.RenderTransform = new MatrixTransform(
+            new Matrix(scale, 0, 0, scale, translateX, translateY));
+
+        _findingFocusMode = true;
+        DrawSelectedFindingOverlay();
+
+        var estimateText = _selectedFinding?.EstimatedDiameterStenosisPercent is double estimate
+            ? $"~{estimate:0}% apparent narrowing"
+            : $"candidate score {_selectedFinding?.Confidence:0.00}";
+
+        StatusText.Text =
+            $"Finding Focus Mode — {estimateText}. Research estimate only; press Esc to return to full cine.";
+
+        _audit.Write("finding_focus_entered", new
+        {
+            findingId = _selectedFinding?.Id,
+            evidence.SourceId,
+            evidence.FrameStart,
+            scale
+        });
+    }
+
+    private void ResetFindingFocusMode(bool updateStatus = true)
+    {
+        if (!_findingFocusMode && ImageSurface.RenderTransform == Transform.Identity)
+            return;
+
+        ImageSurface.RenderTransform = Transform.Identity;
+        _findingFocusMode = false;
+        DrawSelectedFindingOverlay();
+
+        if (updateStatus)
+            StatusText.Text = "Finding Focus Mode closed — full cine restored.";
+
+        _audit.Write("finding_focus_exited");
+    }
+
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && _findingFocusMode)
+        {
+            ResetFindingFocusMode();
+            e.Handled = true;
+        }
     }
 
     private void CoverageList_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
@@ -1329,6 +1491,7 @@ public partial class MainWindow : Window
                 MessageBoxImage.Question) != MessageBoxResult.Yes)
             return;
 
+        ResetFindingFocusMode(false);
         StopPlayback();
         _analysisCts?.Cancel();
         _analysisCts?.Dispose();
