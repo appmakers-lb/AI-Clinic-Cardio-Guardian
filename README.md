@@ -160,3 +160,37 @@ versioned research model adapter.
 
 **THE AI WATCHES, REMEMBERS, HIGHLIGHTS, WARNS, EXPLAINS AND ANSWERS.  
 THE CARDIOLOGIST DECIDES.**
+
+
+## v1.2.0 research AI demo
+
+v1.2.0 adds an optional **research-only X-ray coronary angiography stenosis-candidate model** for physician demonstrations and engineering evaluation.
+
+What it does:
+- runs locally through the existing localhost research gateway;
+- samples frames from an imported DICOM cine;
+- uses an ARCADE-trained U-Net research checkpoint to flag image-level stenosis candidates;
+- links every candidate to the source cine and frame for **SHOW WHY** / evidence review;
+- can speak high-priority research candidate alerts through the existing Windows voice layer;
+- never reports a negative result as "normal", "no stenosis", or clinical clearance.
+
+One-time local setup on a workstation:
+
+```bat
+ai-research\setup_stenoz_model.bat
+```
+
+Then start the gateway:
+
+```bat
+ai-research\run_gateway.bat
+```
+
+Open Cardio Guardian, import the DICOM study, connect the local AI, select a cine, and run **RUN RESEARCH AI ON SELECTED CINE**.
+
+Important limitations:
+- this is a research/demo checkpoint, not a clinically validated or certified medical device;
+- the upstream model has known false positives;
+- it does not identify the vessel/segment, stenosis percentage, lesion severity, or treatment;
+- it is restricted to X-ray angiography research input;
+- physician review of the original cine remains mandatory.
