@@ -135,6 +135,9 @@ var package = service.Parse("""
       "findingType": "suspected_stenosis",
       "confidence": 0.82,
       "priority": "Review",
+      "estimatedDiameterStenosisPercent": 72,
+      "estimatedDiameterStenosisLowerPercent": 57,
+      "estimatedDiameterStenosisUpperPercent": 87,
       "explanation": "Synthetic unit-test payload",
       "evidence": [
         { "sourceId": "SER-1", "frameStart": 1, "frameEnd": 5, "projection": "LAO", "description": "test" }
@@ -146,6 +149,10 @@ var package = service.Parse("""
 
 var converted = service.ToGuardianFindings(package);
 Assert(converted.Count == 1 && converted[0].SourceVersion == "test-model:1.2.3", "structured finding import is versioned");
+Assert(converted[0].EstimatedDiameterStenosisPercent == 72 &&
+       converted[0].EstimatedDiameterStenosisLowerPercent == 57 &&
+       converted[0].EstimatedDiameterStenosisUpperPercent == 87,
+       "structured research narrowing estimate preserved");
 
 var noModelBlocked = false;
 try
@@ -327,5 +334,25 @@ try
 }
 catch (InvalidOperationException) { qcaCalibrationBlocked = true; }
 Assert(qcaCalibrationBlocked, "physical QCA measurement blocked without calibration source");
+
+var invalidEstimateBlocked = false;
+try
+{
+    c.AddFinding(new GuardianFinding
+    {
+        Id = "F-BAD-ESTIMATE",
+        Vessel = "Unspecified coronary vessel",
+        Segment = "image-level review",
+        FindingType = "SuspectedStenosis",
+        Confidence = 0.9,
+        Priority = FindingPriority.Review,
+        Source = FindingSource.StructuredResearchModel,
+        SourceVersion = "research-model:2",
+        EstimatedDiameterStenosisPercent = 120,
+        Evidence = new[] { new EvidenceReference("SER-1", 2, 2, "RAO", "test") }
+    });
+}
+catch (InvalidOperationException) { invalidEstimateBlocked = true; }
+Assert(invalidEstimateBlocked, "out-of-range research narrowing estimate blocked");
 
 Console.WriteLine("All core safety tests passed.");
