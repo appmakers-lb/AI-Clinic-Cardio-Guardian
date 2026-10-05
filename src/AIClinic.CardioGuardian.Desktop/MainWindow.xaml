@@ -8,7 +8,8 @@
         ResizeMode="CanResizeWithGrip"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
-        Closing="Window_Closing">
+        Closing="Window_Closing"
+        PreviewKeyDown="Window_PreviewKeyDown">
     <DockPanel LastChildFill="True">
         <!-- Research-mode banner -->
         <Border DockPanel.Dock="Top" Background="{StaticResource Danger}" Padding="8">
@@ -173,14 +174,16 @@
                 </Grid.RowDefinitions>
 
                 <Border Grid.Row="0" Background="#030609" BorderBrush="{StaticResource Border}"
-                        BorderThickness="1" CornerRadius="6" MinHeight="300">
+                        BorderThickness="1" CornerRadius="6" MinHeight="300" ClipToBounds="True">
                     <Grid>
-                        <MediaElement x:Name="CinePlayer" Stretch="Uniform"
-                                      MediaOpened="CinePlayer_MediaOpened"
-                                      MediaEnded="CinePlayer_MediaEnded"
-                                      Visibility="Collapsed"/>
-                        <Image x:Name="DicomFrameImage" Stretch="Uniform" Visibility="Collapsed"/>
-                        <Canvas x:Name="OverlayCanvas" IsHitTestVisible="False"/>
+                        <Grid x:Name="ImageSurface">
+                            <MediaElement x:Name="CinePlayer" Stretch="Uniform"
+                                          MediaOpened="CinePlayer_MediaOpened"
+                                          MediaEnded="CinePlayer_MediaEnded"
+                                          Visibility="Collapsed"/>
+                            <Image x:Name="DicomFrameImage" Stretch="Uniform" Visibility="Collapsed"/>
+                            <Canvas x:Name="OverlayCanvas" IsHitTestVisible="False"/>
+                        </Grid>
 
                         <StackPanel x:Name="ViewerPlaceholder" HorizontalAlignment="Center"
                                     VerticalAlignment="Center" MaxWidth="520" Margin="20">
@@ -245,6 +248,8 @@
                             </Grid.RowDefinitions>
                             <ListBox x:Name="FindingList" Grid.Row="0" MinHeight="150"
                                      SelectionChanged="FindingList_SelectionChanged"
+                                     MouseDoubleClick="FindingList_MouseDoubleClick"
+                                     ToolTip="Double-click a finding to focus the evidence region. Press Esc to return to the full cine."
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
                             <TextBlock x:Name="FindingDetailText" Grid.Row="1"
                                        Text="No structured findings loaded."
