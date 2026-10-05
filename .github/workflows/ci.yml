@@ -46,3 +46,6 @@ jobs:
         run: |
           python -m py_compile ai-research/research_gateway.py
           python -m py_compile ai-research/model_plugin.py
+          python -m py_compile ai-research/stenoz_unet.py
+          python -m py_compile ai-research/stenoz_research_plugin.py
+          python -m py_compile ai-research/setup_stenoz_research_model.py
