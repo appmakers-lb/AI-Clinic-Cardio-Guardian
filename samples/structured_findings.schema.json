@@ -107,6 +107,30 @@
                 },
                 "description": {
                   "type": "string"
+                },
+                "normalizedCenterX": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "normalizedCenterY": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "normalizedRadius": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "exclusiveMinimum": 0,
+                  "maximum": 1
                 }
               }
             }
