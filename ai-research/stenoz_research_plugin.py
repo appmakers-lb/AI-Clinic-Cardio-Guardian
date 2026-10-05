@@ -1,7 +1,13 @@
 """Stenoz ARCADE XCA research adapter for Cardio Guardian.
 
-This module intentionally emits *research review candidates*, not diagnoses.
-A negative result must never be interpreted as "no stenosis".
+Research/demo only. This adapter does not diagnose coronary disease, does not
+identify a coronary artery name, and does not perform clinical QCA. It combines:
+- direct stenosis-candidate localization,
+- a separate vessel segmentation model,
+- temporal persistence across sampled cine frames,
+- conservative local geometry for an apparent diameter-reduction estimate.
+
+Negative output is never clinical clearance. Complete occlusion is not inferred.
 """
 from __future__ import annotations
 
@@ -14,10 +20,13 @@ from typing import Any, Iterable
 
 import numpy as np
 
+from stenoz_geometry import estimate_apparent_narrowing
+
 ROOT = Path(__file__).resolve().parent
-MODEL_PATH = ROOT / "models" / "unet_stenosis.pt"
+STENOSIS_MODEL_PATH = ROOT / "models" / "unet_stenosis.pt"
+VESSEL_MODEL_PATH = ROOT / "models" / "unet_vessel.pt"
 MODEL_ID = "STENOZ_ARCADE_XCA_RESEARCH"
-MODEL_VERSION = "2026-demo-1"
+MODEL_VERSION = "2026-demo-2"
 INPUT_SIZE = 512
 
 
@@ -38,6 +47,14 @@ class _Candidate:
     area: int
 
 
+@dataclass(frozen=True)
+class _CandidateGroup:
+    winner: _Candidate
+    support_count: int
+    first_frame: int
+    last_frame: int
+
+
 class StenozResearchPlugin:
     model_id = MODEL_ID
     model_version = MODEL_VERSION
@@ -45,14 +62,20 @@ class StenozResearchPlugin:
     def __init__(self) -> None:
         self.is_loaded = False
         self.load_error: str | None = None
-        self._model = None
+        self._stenosis_model = None
+        self._vessel_model = None
         self._torch = None
         self._ndi = None
 
-        if not MODEL_PATH.exists():
+        missing = [
+            str(p.name)
+            for p in (STENOSIS_MODEL_PATH, VESSEL_MODEL_PATH)
+            if not p.exists()
+        ]
+        if missing:
             self.load_error = (
-                "Research checkpoint is not installed. Run "
-                "ai-research\\setup_stenoz_model.bat."
+                "Research checkpoints are incomplete (" + ", ".join(missing) + "). "
+                "Run ai-research\\setup_stenoz_model.bat."
             )
             return
 
@@ -61,27 +84,34 @@ class StenozResearchPlugin:
             from scipy import ndimage as ndi
             from stenoz_unet import StenozCompatibleUNet
 
-            checkpoint = torch.load(MODEL_PATH, map_location="cpu")
-            model = StenozCompatibleUNet(base=int(checkpoint.get("base", 32)))
-            model.load_state_dict(checkpoint["state"])
-            model.eval()
-            torch.set_num_threads(max(1, min(10, (os.cpu_count() or 4))))
+            stenosis_ckpt = torch.load(STENOSIS_MODEL_PATH, map_location="cpu")
+            stenosis_model = StenozCompatibleUNet(base=int(stenosis_ckpt.get("base", 32)))
+            stenosis_model.load_state_dict(stenosis_ckpt["state"])
+            stenosis_model.eval()
 
+            vessel_ckpt = torch.load(VESSEL_MODEL_PATH, map_location="cpu")
+            vessel_model = StenozCompatibleUNet(base=int(vessel_ckpt.get("base", 32)))
+            vessel_model.load_state_dict(vessel_ckpt["state"])
+            vessel_model.eval()
+
+            torch.set_num_threads(max(1, min(10, (os.cpu_count() or 4))))
             self._torch = torch
             self._ndi = ndi
-            self._model = model
+            self._stenosis_model = stenosis_model
+            self._vessel_model = vessel_model
             self.is_loaded = True
         except Exception as exc:
-            self.load_error = f"Research checkpoint could not be loaded: {exc}"
+            self.load_error = f"Research checkpoints could not be loaded: {exc}"
 
     def analyze_series(self, request: dict[str, Any]) -> dict[str, Any]:
-        if not self.is_loaded or self._model is None:
+        if not self.is_loaded or self._stenosis_model is None or self._vessel_model is None:
             raise RuntimeError(self.load_error or "Research model is unavailable.")
 
         source_id = str(request.get("sourceId", "")).strip()
         projection = str(request.get("projection", "")).strip() or None
         modality = str(request.get("modality", "")).strip().upper()
         file_paths = [Path(p) for p in request.get("filePaths", [])]
+
         if not source_id or not file_paths:
             raise ValueError("sourceId and filePaths are required.")
         if modality and modality not in {"XA", "XRF"}:
@@ -97,6 +127,7 @@ class StenozResearchPlugin:
         sample_refs = self._sample_frames(frame_refs, max_frames)
         threshold = float(os.getenv("CARDIO_STENOZ_THRESHOLD", "0.70"))
         min_area = max(20, int(os.getenv("CARDIO_STENOZ_MIN_AREA", "40")))
+        min_support = max(2, int(os.getenv("CARDIO_STENOZ_MIN_SUPPORT", "2")))
 
         candidates: list[_Candidate] = []
         for ref in sample_refs:
@@ -106,29 +137,59 @@ class StenozResearchPlugin:
                 candidates.append(candidate)
 
         grouped = self._group_candidates(candidates, sample_refs)
-        findings = []
-        for rank, candidate in enumerate(grouped[:3], start=1):
+        grouped = [g for g in grouped if g.support_count >= min_support]
+
+        frame_by_index = {ref.global_index: ref for ref in frame_refs}
+        findings: list[dict[str, Any]] = []
+        rejected_geometry = 0
+
+        for rank, group in enumerate(grouped[:6], start=1):
+            candidate = group.winner
+            frame_ref = frame_by_index.get(candidate.frame)
+            if frame_ref is None:
+                continue
+
+            image = self._read_frame(frame_ref)
+            vessel_mask = self._segment_vessels(image)
+            estimate = estimate_apparent_narrowing(
+                vessel_mask,
+                candidate_x=candidate.x,
+                candidate_y=candidate.y,
+            )
+
+            # Product goal: surface suspected narrowed vessel regions, not every
+            # direct-model heatmap. If vessel geometry does not support the
+            # candidate, do not show it as a stenosis finding.
+            if estimate is None:
+                rejected_geometry += 1
+                continue
+
             digest = sha256(
                 f"{source_id}|{candidate.frame}|{candidate.x:.3f}|{candidate.y:.3f}".encode("utf-8")
             ).hexdigest()[:12]
 
-            high_priority = candidate.confidence >= 0.80
+            high_priority = candidate.confidence >= 0.80 and estimate.percent >= 70.0
             findings.append(
                 {
                     "id": f"stenoz-{digest}",
-                    "vessel": "Unspecified",
+                    "vessel": "Unspecified coronary vessel",
                     "segment": "image-level review",
-                    "findingType": "StenosisCandidate",
+                    "findingType": "SuspectedStenosis",
                     "confidence": round(candidate.confidence, 4),
+                    "estimatedDiameterStenosisPercent": round(estimate.percent, 1),
+                    "estimatedDiameterStenosisLowerPercent": round(estimate.lower, 1),
+                    "estimatedDiameterStenosisUpperPercent": round(estimate.upper, 1),
                     "priority": "HighPriorityReview" if high_priority else "Review",
                     "explanation": (
-                        "Research-only X-ray angiography U-Net candidate. "
-                        "This output is not clinically validated and may contain false positives. "
-                        "Physician review of the source cine is required."
+                        "Research-only candidate supported by direct stenosis localization, "
+                        "temporal persistence, and vessel segmentation. "
+                        "The system does not know the coronary artery name yet and this is not a diagnosis."
                     ),
                     "measurementSummary": (
-                        "No stenosis percentage, lesion severity, vessel identity, or treatment "
-                        "recommendation is inferred by this research adapter."
+                        f"Research apparent diameter reduction ~{estimate.percent:.0f}% "
+                        f"(wide range {estimate.lower:.0f}-{estimate.upper:.0f}%). "
+                        "Uncalibrated 2D estimate; not clinical QCA. "
+                        "Complete occlusion is not inferred by this method."
                     ),
                     "evidence": [
                         {
@@ -149,9 +210,11 @@ class StenozResearchPlugin:
                                 6,
                             ),
                             "description": (
-                                f"Research candidate rank {rank}; model score "
-                                f"{candidate.confidence:.2f}; approximate candidate region. "
-                                "Not a diagnosis."
+                                f"Research candidate rank {rank}; direct-model score "
+                                f"{candidate.confidence:.2f}; persisted on {group.support_count} sampled frame(s); "
+                                f"apparent diameter reduction estimate {estimate.percent:.0f}% "
+                                f"({estimate.lower:.0f}-{estimate.upper:.0f}% wide research range). "
+                                "Not a diagnosis or clinical QCA."
                             ),
                         }
                     ],
@@ -161,10 +224,12 @@ class StenozResearchPlugin:
         return {
             "modelId": self.model_id,
             "modelVersion": self.model_version,
-            "findings": findings,
+            "findings": findings[:3],
             "coverage": [],
             "analysisNote": (
-                f"Research adapter sampled {len(sample_refs)} of {len(frame_refs)} frame(s). "
+                f"Research adapter sampled {len(sample_refs)} of {len(frame_refs)} frame(s); "
+                f"{rejected_geometry} temporally persistent direct candidate(s) were rejected "
+                "because vessel geometry did not support them. "
                 "No finding must never be interpreted as normal or disease-free."
             ),
         }
@@ -214,16 +279,9 @@ class StenozResearchPlugin:
             image = image.max() - image
         return image
 
-    def _detect_frame(
-        self,
-        image: np.ndarray,
-        frame_index: int,
-        threshold: float,
-        min_area: int,
-    ) -> _Candidate | None:
+    def _prepare_tensor(self, image: np.ndarray):
         torch = self._torch
-        ndi = self._ndi
-        assert torch is not None and ndi is not None and self._model is not None
+        assert torch is not None
 
         image = image.astype(np.float32)
         lo = float(np.nanmin(image))
@@ -233,15 +291,30 @@ class StenozResearchPlugin:
 
         image = (image - lo) / (hi - lo + 1e-6)
         tensor = torch.from_numpy(image[None, None])
-        tensor = torch.nn.functional.interpolate(
+        return torch.nn.functional.interpolate(
             tensor,
             size=(INPUT_SIZE, INPUT_SIZE),
             mode="bilinear",
             align_corners=False,
         )
 
+    def _detect_frame(
+        self,
+        image: np.ndarray,
+        frame_index: int,
+        threshold: float,
+        min_area: int,
+    ) -> _Candidate | None:
+        torch = self._torch
+        ndi = self._ndi
+        assert torch is not None and ndi is not None and self._stenosis_model is not None
+
+        tensor = self._prepare_tensor(image)
+        if tensor is None:
+            return None
+
         with torch.no_grad():
-            prob = torch.sigmoid(self._model(tensor))[0, 0].cpu().numpy()
+            prob = torch.sigmoid(self._stenosis_model(tensor))[0, 0].cpu().numpy()
 
         mask = prob > threshold
         labels, count = ndi.label(mask)
@@ -264,30 +337,62 @@ class StenozResearchPlugin:
                 best = candidate
         return best
 
+    def _segment_vessels(self, image: np.ndarray) -> np.ndarray:
+        torch = self._torch
+        ndi = self._ndi
+        assert torch is not None and ndi is not None and self._vessel_model is not None
+
+        tensor = self._prepare_tensor(image)
+        if tensor is None:
+            return np.zeros((INPUT_SIZE, INPUT_SIZE), dtype=bool)
+
+        with torch.no_grad():
+            prob = torch.sigmoid(self._vessel_model(tensor))[0, 0].cpu().numpy()
+
+        mask = prob > 0.50
+        labels, count = ndi.label(mask)
+        if count:
+            sizes = np.bincount(labels.ravel())
+            keep = sizes >= 60
+            keep[0] = False
+            mask = keep[labels]
+        return mask
+
     @staticmethod
     def _group_candidates(
         candidates: list[_Candidate],
         sampled: list[_FrameRef],
-    ) -> list[_Candidate]:
+    ) -> list[_CandidateGroup]:
         if not candidates:
             return []
 
         sampled_indices = [x.global_index for x in sampled]
-        gaps = [
-            b - a
-            for a, b in zip(sampled_indices, sampled_indices[1:])
-            if b > a
-        ]
+        gaps = [b - a for a, b in zip(sampled_indices, sampled_indices[1:]) if b > a]
         typical_gap = int(np.median(gaps)) if gaps else 1
         merge_gap = max(2, typical_gap * 2)
+        max_spatial_shift = 96.0
 
         ordered = sorted(candidates, key=lambda c: c.frame)
         groups: list[list[_Candidate]] = [[ordered[0]]]
+
         for candidate in ordered[1:]:
-            if candidate.frame - groups[-1][-1].frame <= merge_gap:
+            previous = groups[-1][-1]
+            frame_close = candidate.frame - previous.frame <= merge_gap
+            spatial_close = math.hypot(candidate.x - previous.x, candidate.y - previous.y) <= max_spatial_shift
+            if frame_close and spatial_close:
                 groups[-1].append(candidate)
             else:
                 groups.append([candidate])
 
-        winners = [max(group, key=lambda c: c.confidence) for group in groups]
-        return sorted(winners, key=lambda c: c.confidence, reverse=True)
+        result = []
+        for group in groups:
+            winner = max(group, key=lambda c: c.confidence)
+            result.append(
+                _CandidateGroup(
+                    winner=winner,
+                    support_count=len(group),
+                    first_frame=group[0].frame,
+                    last_frame=group[-1].frame,
+                )
+            )
+        return sorted(result, key=lambda g: (g.support_count, g.winner.confidence), reverse=True)
