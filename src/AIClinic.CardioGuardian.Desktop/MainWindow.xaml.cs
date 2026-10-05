@@ -3,6 +3,9 @@ using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using AIClinic.CardioGuardian.Core.Models;
@@ -45,6 +48,7 @@ public partial class MainWindow : Window
 
         _playTimer.Tick += PlayTimer_Tick;
         _playTimer.Interval = TimeSpan.FromMilliseconds(100);
+        OverlayCanvas.SizeChanged += (_, _) => DrawSelectedFindingOverlay();
 
         AuditPathText.Text = $"Audit: {_audit.LogFilePath}";
         VoiceStatusText.Text = $"Speech recognition: {_voice.RecognitionStatus}";
@@ -503,6 +507,7 @@ public partial class MainWindow : Window
             FrameStatusText.Text =
                 $"Frame {_dicomCine.CurrentFrameIndex + 1}/{Math.Max(1, _dicomCine.FrameCount)}  |  " +
                 $"{_dicomCine.FramesPerSecond:0.#} fps";
+            DrawSelectedFindingOverlay();
         }
         catch (Exception ex)
         {
@@ -809,6 +814,7 @@ public partial class MainWindow : Window
     {
         _selectedFinding = (FindingList.SelectedItem as ListBoxItem)?.Tag as GuardianFinding;
         UpdateFindingDetail();
+        DrawSelectedFindingOverlay();
     }
 
     private void UpdateFindingDetail()
@@ -819,9 +825,13 @@ public partial class MainWindow : Window
             return;
         }
 
+        var scoreLabel = _selectedFinding.Source == FindingSource.StructuredResearchModel
+            ? $"Model score: {_selectedFinding.Confidence:0.00}"
+            : $"Confidence: {_selectedFinding.Confidence:P0}";
+
         FindingDetailText.Text =
             $"{_selectedFinding.Vessel} {_selectedFinding.Segment} — {_selectedFinding.FindingType}\n" +
-            $"Confidence: {_selectedFinding.Confidence:P0} | Priority: {_selectedFinding.Priority} | Status: {_selectedFinding.Status}\n" +
+            $"{scoreLabel} | Priority: {_selectedFinding.Priority} | Status: {_selectedFinding.Status}\n" +
             $"Source: {_selectedFinding.Source} / {_selectedFinding.SourceVersion.OrFallback("(not specified)")}\n" +
             $"{_selectedFinding.MeasurementSummary.OrFallback(string.Empty)}\n" +
             $"{_selectedFinding.Explanation.OrFallback("No explanation supplied.")}";
@@ -854,15 +864,20 @@ public partial class MainWindow : Window
 
         var evidenceText = new StringBuilder();
         evidenceText.AppendLine($"{_selectedFinding.Vessel} {_selectedFinding.Segment} — {_selectedFinding.FindingType}");
-        evidenceText.AppendLine($"Confidence: {_selectedFinding.Confidence:P0}");
+        evidenceText.AppendLine(
+            _selectedFinding.Source == FindingSource.StructuredResearchModel
+                ? $"Model score: {_selectedFinding.Confidence:0.00} (not disease probability)"
+                : $"Confidence: {_selectedFinding.Confidence:P0}");
         evidenceText.AppendLine($"Source: {_selectedFinding.SourceVersion.OrFallback(_selectedFinding.Source.ToString())}");
         evidenceText.AppendLine();
 
         for (var i = 0; i < _selectedFinding.Evidence.Count; i++)
         {
             var evi = _selectedFinding.Evidence[i];
+            var startFrame = evi.FrameStart.HasValue ? (evi.FrameStart.Value + 1).ToString() : "?";
+            var endFrame = evi.FrameEnd.HasValue ? (evi.FrameEnd.Value + 1).ToString() : "?";
             evidenceText.AppendLine(
-                $"{i + 1}. {evi.SourceId} | frames {evi.FrameStart?.ToString() ?? "?"}-{evi.FrameEnd?.ToString() ?? "?"} | " +
+                $"{i + 1}. {evi.SourceId} | displayed frame {startFrame}-{endFrame} | " +
                 $"{evi.Projection.OrFallback("projection n/a")} | {evi.Description}");
         }
 
@@ -895,6 +910,108 @@ public partial class MainWindow : Window
         {
             CinePlayer.Position = TimeSpan.FromSeconds(Math.Max(0, seconds));
         }
+    }
+
+    private void DrawSelectedFindingOverlay()
+    {
+        OverlayCanvas.Children.Clear();
+
+        if (_viewerMode != ViewerMode.Dicom ||
+            _selectedFinding is null ||
+            DicomFrameImage.Source is not BitmapSource bitmap ||
+            string.IsNullOrWhiteSpace(_currentSourceId))
+        {
+            return;
+        }
+
+        var frame = _dicomCine.CurrentFrameIndex;
+        var evidence = _selectedFinding.Evidence.FirstOrDefault(x =>
+            string.Equals(x.SourceId, _currentSourceId, StringComparison.OrdinalIgnoreCase) &&
+            x.FrameStart.HasValue &&
+            x.FrameEnd.HasValue &&
+            frame >= x.FrameStart.Value &&
+            frame <= x.FrameEnd.Value &&
+            x.NormalizedCenterX.HasValue &&
+            x.NormalizedCenterY.HasValue);
+
+        if (evidence is null)
+            return;
+
+        var canvasWidth = OverlayCanvas.ActualWidth;
+        var canvasHeight = OverlayCanvas.ActualHeight;
+        if (canvasWidth <= 1 || canvasHeight <= 1 || bitmap.PixelWidth <= 0 || bitmap.PixelHeight <= 0)
+            return;
+
+        var imageScale = Math.Min(
+            canvasWidth / bitmap.PixelWidth,
+            canvasHeight / bitmap.PixelHeight);
+
+        var displayedWidth = bitmap.PixelWidth * imageScale;
+        var displayedHeight = bitmap.PixelHeight * imageScale;
+        var offsetX = (canvasWidth - displayedWidth) / 2.0;
+        var offsetY = (canvasHeight - displayedHeight) / 2.0;
+
+        var centerX = offsetX + evidence.NormalizedCenterX!.Value * displayedWidth;
+        var centerY = offsetY + evidence.NormalizedCenterY!.Value * displayedHeight;
+        var normalizedRadius = evidence.NormalizedRadius ?? 0.06;
+        var radius = Math.Clamp(
+            normalizedRadius * Math.Min(displayedWidth, displayedHeight),
+            18,
+            90);
+
+        var ring = new Ellipse
+        {
+            Width = radius * 2,
+            Height = radius * 2,
+            Stroke = Brushes.OrangeRed,
+            StrokeThickness = 4,
+            Fill = Brushes.Transparent
+        };
+
+        Canvas.SetLeft(ring, centerX - radius);
+        Canvas.SetTop(ring, centerY - radius);
+        OverlayCanvas.Children.Add(ring);
+
+        var horizontal = new Line
+        {
+            X1 = centerX - radius * 0.55,
+            X2 = centerX + radius * 0.55,
+            Y1 = centerY,
+            Y2 = centerY,
+            Stroke = Brushes.OrangeRed,
+            StrokeThickness = 2
+        };
+        var vertical = new Line
+        {
+            X1 = centerX,
+            X2 = centerX,
+            Y1 = centerY - radius * 0.55,
+            Y2 = centerY + radius * 0.55,
+            Stroke = Brushes.OrangeRed,
+            StrokeThickness = 2
+        };
+        OverlayCanvas.Children.Add(horizontal);
+        OverlayCanvas.Children.Add(vertical);
+
+        var label = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(220, 15, 23, 42)),
+            BorderBrush = Brushes.OrangeRed,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(6, 3, 6, 3),
+            Child = new TextBlock
+            {
+                Text = $"RESEARCH AI CANDIDATE • score {_selectedFinding.Confidence:0.00}",
+                Foreground = Brushes.White,
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 11
+            }
+        };
+
+        Canvas.SetLeft(label, Math.Clamp(centerX + radius + 6, 4, Math.Max(4, canvasWidth - 240)));
+        Canvas.SetTop(label, Math.Clamp(centerY - 14, 4, Math.Max(4, canvasHeight - 32)));
+        OverlayCanvas.Children.Add(label);
     }
 
     private void CoverageList_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
@@ -1284,7 +1401,8 @@ public partial class MainWindow : Window
             {
                 Content =
                     $"{marker} {finding.Vessel} {finding.Segment} — {HumanizeFindingType(finding.FindingType)} " +
-                    $"({finding.Confidence:P0}) [{sourceMarker}] [{finding.Status}]",
+                    $"{(finding.Source == FindingSource.StructuredResearchModel ? $"[score {finding.Confidence:0.00}]" : $"({finding.Confidence:P0})")} " +
+                    $"[{sourceMarker}] [{finding.Status}]",
                 Tag = finding
             };
 
