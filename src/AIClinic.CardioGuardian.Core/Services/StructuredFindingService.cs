@@ -108,6 +108,9 @@ public sealed class StructuredFindingService
                 Evidence = evidence,
                 Explanation = item.Explanation?.Trim(),
                 MeasurementSummary = item.MeasurementSummary?.Trim(),
+                EstimatedDiameterStenosisPercent = item.EstimatedDiameterStenosisPercent,
+                EstimatedDiameterStenosisLowerPercent = item.EstimatedDiameterStenosisLowerPercent,
+                EstimatedDiameterStenosisUpperPercent = item.EstimatedDiameterStenosisUpperPercent,
                 Source = FindingSource.StructuredResearchModel,
                 SourceVersion = $"{package.ModelId.Trim()}:{package.ModelVersion.Trim()}"
             };
