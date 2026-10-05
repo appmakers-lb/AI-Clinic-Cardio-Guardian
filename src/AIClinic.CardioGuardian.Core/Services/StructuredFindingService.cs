@@ -78,7 +78,12 @@ public sealed class StructuredFindingService
             var evidence = item.Evidence.Select(x =>
             {
                 var reference = new EvidenceReference(
-                    x.SourceId, x.FrameStart, x.FrameEnd, x.Projection, x.Description);
+                    x.SourceId, x.FrameStart, x.FrameEnd, x.Projection, x.Description)
+                {
+                    NormalizedCenterX = x.NormalizedCenterX,
+                    NormalizedCenterY = x.NormalizedCenterY,
+                    NormalizedRadius = x.NormalizedRadius
+                };
                 try
                 {
                     reference.Validate();
