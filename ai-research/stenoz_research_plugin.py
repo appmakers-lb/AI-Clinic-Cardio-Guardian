@@ -136,10 +136,21 @@ class StenozResearchPlugin:
                             "frameStart": candidate.frame,
                             "frameEnd": candidate.frame,
                             "projection": projection,
+                            "normalizedCenterX": round(candidate.x / INPUT_SIZE, 6),
+                            "normalizedCenterY": round(candidate.y / INPUT_SIZE, 6),
+                            "normalizedRadius": round(
+                                min(
+                                    0.18,
+                                    max(
+                                        0.035,
+                                        (math.sqrt(candidate.area / math.pi) / INPUT_SIZE) * 1.6,
+                                    ),
+                                ),
+                                6,
+                            ),
                             "description": (
                                 f"Research candidate rank {rank}; model score "
-                                f"{candidate.confidence:.2f}; approximate model-space center "
-                                f"x={candidate.x:.0f}, y={candidate.y:.0f}; area={candidate.area}px. "
+                                f"{candidate.confidence:.2f}; approximate candidate region. "
                                 "Not a diagnosis."
                             ),
                         }
