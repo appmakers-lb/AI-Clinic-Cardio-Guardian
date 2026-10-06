@@ -273,7 +273,111 @@ class StenozResearchPlugin:
         injection_side = infer_injection_side(metadata_text)
 
         findings: list[dict[str, Any]] = []
+        withheld_review_candidates: list[dict[str, Any]] = []
         rejected_temporal_or_qca = 0
+
+        def add_withheld_review_candidate(
+            group: _CandidateGroup,
+            reason: str,
+            measured_items: list[_MeasuredCandidate],
+        ) -> None:
+            winner = group.winner
+            if winner.confidence < 0.70 or group.support_count < min_support:
+                return
+
+            evidence = []
+            evidence_members = sorted(
+                group.members,
+                key=lambda item: (
+                    frame_data[item.frame].quality.total_score
+                    if item.frame in frame_data
+                    else 0.0,
+                    item.confidence,
+                ),
+                reverse=True,
+            )[:4]
+
+            for evidence_rank, item in enumerate(evidence_members, start=1):
+                quality = (
+                    frame_data[item.frame].quality.total_score
+                    if item.frame in frame_data
+                    else 0.0
+                )
+                evidence.append(
+                    {
+                        "sourceId": source_id,
+                        "frameStart": item.frame,
+                        "frameEnd": item.frame,
+                        "projection": projection,
+                        "normalizedCenterX": round(item.x / INPUT_SIZE, 6),
+                        "normalizedCenterY": round(item.y / INPUT_SIZE, 6),
+                        "normalizedRadius": round(
+                            min(
+                                0.16,
+                                max(
+                                    0.04,
+                                    (math.sqrt(item.area / math.pi) / INPUT_SIZE) * 1.8,
+                                ),
+                            ),
+                            6,
+                        ),
+                        "description": (
+                            f"Persistent research stenosis candidate {evidence_rank}; "
+                            f"localization score {item.confidence:.2f}; "
+                            f"frame quality {quality:.2f}. QCA percentage withheld: {reason}."
+                        ),
+                    }
+                )
+
+            if not evidence:
+                return
+
+            digest = sha256(
+                f"{source_id}|REVIEW|{winner.frame}|{winner.x:.3f}|{winner.y:.3f}|{reason}".encode("utf-8")
+            ).hexdigest()[:12]
+
+            measured_count = len(measured_items)
+            best_frame_quality = max(
+                (
+                    frame_data[item.frame].quality.total_score
+                    for item in evidence_members
+                    if item.frame in frame_data
+                ),
+                default=0.0,
+            )
+
+            withheld_review_candidates.append(
+                {
+                    "id": f"review-{digest}",
+                    "vessel": "Unspecified coronary vessel",
+                    "segment": "image-level review",
+                    "findingType": "ResearchStenosisCandidate",
+                    "confidence": round(winner.confidence, 4),
+                    "measurementQuality": "Limited",
+                    "measurementQualityScore": round(
+                        max(
+                            [item.measurement.quality_score for item in measured_items]
+                            or [0.0]
+                        ),
+                        4,
+                    ),
+                    "measurementFrameCount": max(group.support_count, measured_count),
+                    "frameQualityScore": round(best_frame_quality, 4),
+                    "injectionSide": injection_side,
+                    "priority": "Review",
+                    "explanation": (
+                        "The research model localized a persistent suspicious vessel region, "
+                        "but the quantitative QCA gates were not strong enough to publish a "
+                        "stenosis percentage. Review the highlighted evidence instead of "
+                        "interpreting this as a diagnosis."
+                    ),
+                    "measurementSummary": (
+                        f"Persistent candidate across {group.support_count} sampled frame(s). "
+                        f"QCA percentage withheld: {reason}."
+                    ),
+                    "evidence": evidence,
+                }
+            )
 
         for rank, group in enumerate(grouped[:10], start=1):
             measured: list[_MeasuredCandidate] = []
@@ -330,6 +434,11 @@ class StenozResearchPlugin:
 
             if len(measured) < min_qca_frames:
                 rejected_temporal_or_qca += 1
+                add_withheld_review_candidate(
+                    group,
+                    "insufficient repeatable lumen/reference geometry",
+                    measured,
+                )
                 continue
 
             percents = np.asarray(
@@ -341,6 +450,11 @@ class StenozResearchPlugin:
             mad = float(np.median(np.abs(percents - median_percent)))
             if variability > max_qca_variability:
                 rejected_temporal_or_qca += 1
+                add_withheld_review_candidate(
+                    group,
+                    f"cross-frame variability {variability:.1f} pp exceeded the {max_qca_variability:.1f} pp gate",
+                    measured,
+                )
                 continue
 
             geometry_quality = float(np.median(
@@ -352,6 +466,11 @@ class StenozResearchPlugin:
             aggregate_quality = 0.76 * geometry_quality + 0.24 * frame_quality
             if aggregate_quality < 0.68:
                 rejected_temporal_or_qca += 1
+                add_withheld_review_candidate(
+                    group,
+                    f"measurement quality {aggregate_quality:.2f} was below the 0.68 reporting gate",
+                    measured,
+                )
                 continue
 
             quality_label = (
@@ -655,6 +774,16 @@ class StenozResearchPlugin:
                 }
             )
 
+        if not findings and withheld_review_candidates:
+            withheld_review_candidates.sort(
+                key=lambda item: (
+                    float(item.get("frameQualityScore") or 0.0),
+                    float(item.get("confidence") or 0.0),
+                ),
+                reverse=True,
+            )
+            findings.extend(withheld_review_candidates[:3])
+
         max_reported_findings = max(
             1, int(os.getenv("CARDIO_MAX_REPORTED_FINDINGS", "10"))
         )
@@ -675,8 +804,10 @@ class StenozResearchPlugin:
             "analysisNote": (
                 f"Sampled {len(sample_refs)} of {len(frame_refs)} frame(s); "
                 f"{len(selected_refs)} passed contrast/sharpness/vessel/overlap quality gates. "
-                f"{rejected_temporal_or_qca} persistent stenosis candidate group(s) were withheld "
-                "because QCA geometry or multi-frame repeatability failed. "
+                f"{rejected_temporal_or_qca} persistent stenosis candidate group(s) failed "
+                "quantitative QCA geometry/repeatability gates. When no qualified measurement "
+                "exists, up to three persistent regions may be shown as review-only candidates "
+                "without a stenosis percentage. "
                 "Single-view foreshortening cannot be proven absent; whole-case multi-view "
                 "linking ranks compatible projections by vessel span and frame quality. "
                 "A negative result is never clinical clearance."
