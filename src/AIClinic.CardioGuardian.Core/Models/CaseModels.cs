@@ -138,6 +138,21 @@ public sealed class GuardianFinding
     public int? MeasurementFrameCount { get; init; }
     public double? MeasurementVariabilityPercent { get; init; }
     public string? CalibrationSource { get; init; }
+    public double? BorderConfidence { get; init; }
+    public double? LongitudinalPosition { get; init; }
+    public double? ProjectedReferenceSpanPixels { get; init; }
+    public double? FrameQualityScore { get; init; }
+    public double? FrameOverlapRisk { get; init; }
+    public string? InjectionSide { get; init; }
+    public string? LesionGroupId { get; init; }
+    public bool MultiViewConfirmed { get; init; }
+    public int? ProjectionCount { get; init; }
+    public int? SourceSeriesCount { get; init; }
+    public double? CrossViewVariabilityPercent { get; init; }
+    public double? OcclusionPercent { get; init; }
+    public double? TotalOcclusionScore { get; init; }
+    public int? TotalOcclusionFrameCount { get; init; }
+    public bool ChronicityEstablished { get; init; }
     public FindingStatus Status { get; private set; } = FindingStatus.Proposed;
     public DateTime CreatedAtUtc { get; init; } = DateTime.UtcNow;
     public DateTime? DispositionUpdatedAtUtc { get; private set; }
@@ -185,6 +200,17 @@ public sealed class GuardianFinding
         ValidatePositive(ReferenceDiameterMm, nameof(ReferenceDiameterMm));
         ValidatePositive(MinimumLumenDiameterMm, nameof(MinimumLumenDiameterMm));
         ValidatePositive(LesionLengthMm, nameof(LesionLengthMm));
+        ValidateUnitInterval(BorderConfidence, nameof(BorderConfidence));
+        ValidateUnitInterval(LongitudinalPosition, nameof(LongitudinalPosition));
+        ValidatePositive(ProjectedReferenceSpanPixels, nameof(ProjectedReferenceSpanPixels));
+        ValidateUnitInterval(FrameQualityScore, nameof(FrameQualityScore));
+        ValidateUnitInterval(FrameOverlapRisk, nameof(FrameOverlapRisk));
+        ValidatePercent(CrossViewVariabilityPercent, nameof(CrossViewVariabilityPercent));
+        ValidatePercent(OcclusionPercent, nameof(OcclusionPercent));
+        ValidateUnitInterval(TotalOcclusionScore, nameof(TotalOcclusionScore));
+
+        if (ProjectionCount is < 0 || SourceSeriesCount is < 0 || TotalOcclusionFrameCount is < 0)
+            throw new InvalidOperationException("Projection/source-series/occlusion frame counts cannot be negative.");
 
         if (MeasurementQualityScore.HasValue &&
             (double.IsNaN(MeasurementQualityScore.Value) ||
@@ -254,7 +280,8 @@ public sealed class GuardianFinding
         }
 
         if (Source == FindingSource.StructuredResearchModel &&
-            EstimatedDiameterStenosisPercent.HasValue)
+            EstimatedDiameterStenosisPercent.HasValue &&
+            !string.Equals(FindingType, "SuspectedTotalOcclusion", StringComparison.OrdinalIgnoreCase))
         {
             if (MeasurementQuality is not ("Moderate" or "High"))
                 throw new InvalidOperationException(
@@ -275,6 +302,19 @@ public sealed class GuardianFinding
             if (!ReferenceDiameterPixels.HasValue || !MinimumLumenDiameterPixels.HasValue)
                 throw new InvalidOperationException(
                     "A structured stenosis percentage requires reference and minimum lumen diameters.");
+        }
+
+        if (string.Equals(FindingType, "SuspectedTotalOcclusion", StringComparison.OrdinalIgnoreCase))
+        {
+            if (OcclusionPercent is not 100)
+                throw new InvalidOperationException(
+                    "A suspected total-occlusion finding must use the separate OcclusionPercent=100 field.");
+            if (TotalOcclusionScore is null or < 0.68)
+                throw new InvalidOperationException(
+                    "A suspected total-occlusion finding requires detector score >= 0.68.");
+            if (TotalOcclusionFrameCount is null or < 3)
+                throw new InvalidOperationException(
+                    "A suspected total-occlusion finding requires evidence from at least three frames.");
         }
 
         foreach (var evidence in Evidence)
@@ -302,6 +342,18 @@ public sealed class GuardianFinding
             value.Value <= 0)
         {
             throw new InvalidOperationException($"{name} must be greater than zero.");
+        }
+    }
+
+    private static void ValidateUnitInterval(double? value, string name)
+    {
+        if (!value.HasValue) return;
+
+        if (double.IsNaN(value.Value) ||
+            double.IsInfinity(value.Value) ||
+            value.Value is < 0 or > 1)
+        {
+            throw new InvalidOperationException($"{name} must be between 0 and 1.");
         }
     }
 }
@@ -472,6 +524,21 @@ public sealed class StructuredFindingItem
     public int? MeasurementFrameCount { get; init; }
     public double? MeasurementVariabilityPercent { get; init; }
     public string? CalibrationSource { get; init; }
+    public double? BorderConfidence { get; init; }
+    public double? LongitudinalPosition { get; init; }
+    public double? ProjectedReferenceSpanPixels { get; init; }
+    public double? FrameQualityScore { get; init; }
+    public double? FrameOverlapRisk { get; init; }
+    public string? InjectionSide { get; init; }
+    public string? LesionGroupId { get; init; }
+    public bool MultiViewConfirmed { get; init; }
+    public int? ProjectionCount { get; init; }
+    public int? SourceSeriesCount { get; init; }
+    public double? CrossViewVariabilityPercent { get; init; }
+    public double? OcclusionPercent { get; init; }
+    public double? TotalOcclusionScore { get; init; }
+    public int? TotalOcclusionFrameCount { get; init; }
+    public bool ChronicityEstablished { get; init; }
     public IReadOnlyList<StructuredEvidenceItem> Evidence { get; init; } = Array.Empty<StructuredEvidenceItem>();
 }
 
