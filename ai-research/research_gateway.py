@@ -20,7 +20,7 @@ try:
 except Exception:
     MODEL_PLUGIN = None
 
-SERVICE_VERSION = "1.2.1"
+SERVICE_VERSION = "1.3.0"
 app = FastAPI(
     title="AI Clinic Cardio Guardian Research Gateway",
     version=SERVICE_VERSION,
