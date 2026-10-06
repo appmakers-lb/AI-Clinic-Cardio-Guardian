@@ -10,16 +10,7 @@
         SnapsToDevicePixels="True"
         Closing="Window_Closing"
         PreviewKeyDown="Window_PreviewKeyDown">
-    <!-- Fit the entire workstation UI inside the actual client area.
-         A fixed logical design surface is uniformly scaled by WPF, so Windows
-         DPI scaling or a shorter monitor can no longer push the right/bottom
-         panes outside the visible window. -->
-    <Grid ClipToBounds="True">
-        <Viewbox Stretch="Uniform"
-                 StretchDirection="Both"
-                 HorizontalAlignment="Stretch"
-                 VerticalAlignment="Stretch">
-            <DockPanel Width="1280" Height="670" LastChildFill="True">
+    <DockPanel LastChildFill="True">
         <!-- Research-mode banner -->
         <Border DockPanel.Dock="Top" Background="{StaticResource Danger}" Padding="8">
             <Grid>
@@ -47,9 +38,9 @@
                     <WrapPanel Grid.Column="0" VerticalAlignment="Center">
                         <Button Style="{StaticResource PrimaryButton}"
                                 Content="1  IMPORT CARDIAC CD / USB / DICOM"
-                                Click="ImportDicom_Click" MinWidth="260"/>
-                        <Button Content="OPEN VIDEO" Click="OpenCine_Click" MinWidth="120"/>
-                        <Button Content="CLEAR CASE" Click="ClearCase_Click" MinWidth="105"/>
+                                Click="ImportDicom_Click" MinWidth="220"/>
+                        <Button Content="OPEN VIDEO" Click="OpenCine_Click" MinWidth="100"/>
+                        <Button Content="CLEAR CASE" Click="ClearCase_Click" MinWidth="90"/>
                     </WrapPanel>
 
                     <Border Grid.Column="1" Background="#172231" BorderBrush="{StaticResource Border}"
@@ -66,18 +57,18 @@
                 </Grid>
 
                 <WrapPanel Grid.Row="1" Margin="0,2,0,0">
-                    <Button Content="IMPORT AI FINDINGS JSON" Click="ImportFindings_Click" MinWidth="185"
+                    <Button Content="IMPORT AI FINDINGS JSON" Click="ImportFindings_Click" MinWidth="155"
                             ToolTip="Imports structured, versioned research-model output. It does not create findings from raw images by itself."/>
-                    <Button Content="CONNECT LOCAL AI" Click="ConnectLocalAi_Click" MinWidth="145"/>
+                    <Button Content="CONNECT LOCAL AI" Click="ConnectLocalAi_Click" MinWidth="120"/>
                     <Button x:Name="AnalyzeButton" Style="{StaticResource PrimaryButton}"
                             Content="RUN RESEARCH AI ON SELECTED CINE"
-                            Click="AnalyzeSelectedCine_Click" MinWidth="200" IsEnabled="False"
+                            Click="AnalyzeSelectedCine_Click" MinWidth="185" IsEnabled="False"
                             ToolTip="Analyze the currently selected cine with the connected local research AI."/>
                     <Button x:Name="AnalyzeWholeCaseButton" Content="RUN RESEARCH AI WHOLE CASE"
-                            Click="AnalyzeWholeCase_Click" MinWidth="175" IsEnabled="False"
+                            Click="AnalyzeWholeCase_Click" MinWidth="165" IsEnabled="False"
                             ToolTip="Runs the connected research model across every imported cine series. Batch mode does not speak alerts while processing."/>
                     <Button x:Name="CancelAnalysisButton" Content="CANCEL ANALYSIS"
-                            Click="CancelAnalysis_Click" MinWidth="135" IsEnabled="False"
+                            Click="CancelAnalysis_Click" MinWidth="115" IsEnabled="False"
                             ToolTip="Stops the current research-model request/batch. Findings already accepted remain in the case."/>
                     
                 </WrapPanel>
@@ -107,17 +98,17 @@
              measures star columns at infinite width and pushes the right pane off-screen. -->
         <Grid Margin="4" ClipToBounds="True">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="165"/>
+                <ColumnDefinition Width="170" MinWidth="150"/>
                 <ColumnDefinition Width="5"/>
-                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*" MinWidth="300"/>
                 <ColumnDefinition Width="5"/>
-                <ColumnDefinition Width="275"/>
+                <ColumnDefinition Width="250" MinWidth="230"/>
             </Grid.ColumnDefinitions>
 
             <!-- LEFT: DICOM navigation. Vertical scrolling only; no horizontal clipping. -->
             <Border Grid.Column="0" Background="{StaticResource Panel}"
                     BorderBrush="{StaticResource Border}" BorderThickness="1"
-                    CornerRadius="6" Padding="6">
+                    CornerRadius="6" Padding="4">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -193,7 +184,7 @@
                 </Grid.RowDefinitions>
 
                 <Border Grid.Row="0" Background="#030609" BorderBrush="{StaticResource Border}"
-                        BorderThickness="1" CornerRadius="6" MinHeight="110" ClipToBounds="True">
+                        BorderThickness="1" CornerRadius="6" MinHeight="150" ClipToBounds="True">
                     <Grid>
                         <Grid x:Name="ImageSurface">
                             <MediaElement x:Name="CinePlayer" Stretch="Uniform"
@@ -242,8 +233,8 @@
                 </UniformGrid>
 
                 <Border Grid.Row="3" Background="#111B27" BorderBrush="{StaticResource Border}"
-                        BorderThickness="1" CornerRadius="5" Padding="4" Margin="0,3,0,0" MaxHeight="42">
-                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="10">
+                        BorderThickness="1" CornerRadius="5" Padding="3" Margin="0,2,0,0" MaxHeight="34">
+                    <TextBlock TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="9">
                         <Run FontWeight="Bold" Foreground="#FDE68A" Text="Research build: "/>
                         <Run Text="v1.4.0 selects higher-quality contrast-filled cine frames, measures sub-pixel lumen borders, uses strict physical-calibration rules, links compatible lesions across projections, and runs a separate total-occlusion detector. Results remain research outputs until externally validated."/>
                     </TextBlock>
@@ -256,7 +247,7 @@
             <!-- RIGHT: tabbed workspace keeps every control visible without a tall stacked sidebar. -->
             <Border Grid.Column="4" Background="{StaticResource Panel}"
                     BorderBrush="{StaticResource Border}" BorderThickness="1"
-                    CornerRadius="6" Padding="4" MinHeight="0">
+                    CornerRadius="6" Padding="3" MinHeight="0">
                 <TabControl MinHeight="0">
                     <TabItem Header="Findings">
                         <Grid Margin="6">
@@ -367,7 +358,5 @@
                 </TabControl>
             </Border>
         </Grid>
-            </DockPanel>
-        </Viewbox>
-    </Grid>
+    </DockPanel>
 </Window>
