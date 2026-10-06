@@ -111,6 +111,17 @@ public sealed class StructuredFindingService
                 EstimatedDiameterStenosisPercent = item.EstimatedDiameterStenosisPercent,
                 EstimatedDiameterStenosisLowerPercent = item.EstimatedDiameterStenosisLowerPercent,
                 EstimatedDiameterStenosisUpperPercent = item.EstimatedDiameterStenosisUpperPercent,
+                ReferenceDiameterPixels = item.ReferenceDiameterPixels,
+                MinimumLumenDiameterPixels = item.MinimumLumenDiameterPixels,
+                LesionLengthPixels = item.LesionLengthPixels,
+                ReferenceDiameterMm = item.ReferenceDiameterMm,
+                MinimumLumenDiameterMm = item.MinimumLumenDiameterMm,
+                LesionLengthMm = item.LesionLengthMm,
+                MeasurementQuality = item.MeasurementQuality?.Trim(),
+                MeasurementQualityScore = item.MeasurementQualityScore,
+                MeasurementFrameCount = item.MeasurementFrameCount,
+                MeasurementVariabilityPercent = item.MeasurementVariabilityPercent,
+                CalibrationSource = item.CalibrationSource?.Trim(),
                 Source = FindingSource.StructuredResearchModel,
                 SourceVersion = $"{package.ModelId.Trim()}:{package.ModelVersion.Trim()}"
             };
