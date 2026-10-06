@@ -53,6 +53,7 @@ public partial class MainWindow : Window
         _playTimer.Interval = TimeSpan.FromMilliseconds(100);
         OverlayCanvas.SizeChanged += (_, _) => DrawSelectedFindingOverlay();
         ImageSurface.MouseLeftButtonDown += ImageSurface_MouseLeftButtonDown;
+        Loaded += MainWindow_Loaded;
 
         AuditPathText.Text = $"Audit: {_audit.LogFilePath}";
         VoiceStatusText.Text = $"Speech recognition: {_voice.RecognitionStatus}";
@@ -70,21 +71,44 @@ public partial class MainWindow : Window
     }
 
 
+    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        StatusText.Text = "Starting local AI automatically…";
+        var health = await _localAi.EnsureRunningAsync();
+
+        if (health.Reachable && health.ModelLoaded)
+        {
+            ModelStatusText.Text = "Research AI demo: CONNECTED";
+            AnalyzeButton.IsEnabled = true;
+            AnalyzeWholeCaseButton.IsEnabled = _series.Count > 0;
+            StatusText.Text = "Local AI ready.";
+            _audit.Write("local_ai_auto_connected", new { health.ModelLoaded, health.Message });
+            return;
+        }
+
+        ModelStatusText.Text = health.Reachable
+            ? "Local AI: service online / NO MODEL"
+            : "Local AI: OFFLINE";
+        AnalyzeButton.IsEnabled = false;
+        AnalyzeWholeCaseButton.IsEnabled = false;
+        StatusText.Text = health.Message;
+    }
+
     private async void ConnectLocalAi_Click(object sender, RoutedEventArgs e)
     {
-        StatusText.Text = "Checking local AI research gateway…";
-        var health = await _localAi.CheckHealthAsync();
+        StatusText.Text = "Starting/checking local AI…";
+        var health = await _localAi.EnsureRunningAsync();
 
         if (!health.Reachable)
         {
             ModelStatusText.Text = "Local AI: OFFLINE";
             AnalyzeButton.IsEnabled = false;
             AnalyzeWholeCaseButton.IsEnabled = false;
-            StatusText.Text = "Local AI research gateway is not running.";
+            StatusText.Text = health.Message;
             MessageBox.Show(
-                "The local AI research gateway is not running.\n\n" +
-                "To install the optional research/demo model, run ai-research\\setup_stenoz_model.bat once.\n" +
-                "Then start ai-research\\run_gateway.bat and connect again.",
+                "Cardio Guardian could not start the local AI automatically.\n\n" +
+                health.Message +
+                "\n\nThe program now starts the gateway itself; PowerShell is not normally required.",
                 "Local AI offline",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -98,8 +122,8 @@ public partial class MainWindow : Window
             AnalyzeWholeCaseButton.IsEnabled = false;
             StatusText.Text = health.Message;
             MessageBox.Show(
-                health.Message + "\n\nThe application will not run fake medical analysis.",
-                "No research model loaded",
+                health.Message + "\n\nRun ai-research\\setup_stenoz_model.bat once only if the model files are missing.",
+                "Research model unavailable",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
             return;
@@ -108,7 +132,7 @@ public partial class MainWindow : Window
         ModelStatusText.Text = "Research AI demo: CONNECTED";
         AnalyzeButton.IsEnabled = true;
         AnalyzeWholeCaseButton.IsEnabled = _series.Count > 0;
-        StatusText.Text = health.Message;
+        StatusText.Text = "Local AI ready.";
         _audit.Write("local_ai_connected", new { health.ModelLoaded, health.Message });
     }
 
