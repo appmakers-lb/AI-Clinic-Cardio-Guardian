@@ -1455,11 +1455,19 @@ public partial class MainWindow : Window
             finding.EstimatedDiameterStenosisLowerPercent is double lower &&
             finding.EstimatedDiameterStenosisUpperPercent is double upper)
         {
+            var qualityText = string.IsNullOrWhiteSpace(finding.MeasurementQuality)
+                ? string.Empty
+                : $" Measurement quality is {finding.MeasurementQuality}.";
+            var frameCountText = finding.MeasurementFrameCount is int frameCount
+                ? $" The estimate was repeated across {frameCount} measured frames."
+                : string.Empty;
+
             _voice.Speak(
-                $"Doctor, research-only AI flagged a possible narrowed vessel region{frameText}. " +
-                $"The apparent diameter reduction estimate is about {estimate:0} percent, " +
-                $"with a wide research range from {lower:0} to {upper:0} percent. " +
-                "Please review the evidence. This is not clinical Q C A or a diagnosis.");
+                $"Doctor, research Q C A flagged a possible narrowed vessel region{frameText}. " +
+                $"Estimated diameter stenosis is about {estimate:0} percent, " +
+                $"with a research range from {lower:0} to {upper:0} percent." +
+                qualityText + frameCountText +
+                " Please review the evidence. This is not certified clinical Q C A or a diagnosis.");
         }
         else
         {
