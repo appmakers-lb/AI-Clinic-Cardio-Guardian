@@ -253,6 +253,30 @@ public sealed class GuardianFinding
                 "Structured research-model findings require a model ID/version.");
         }
 
+        if (Source == FindingSource.StructuredResearchModel &&
+            EstimatedDiameterStenosisPercent.HasValue)
+        {
+            if (MeasurementQuality is not ("Moderate" or "High"))
+                throw new InvalidOperationException(
+                    "A structured stenosis percentage requires Moderate or High measurement quality.");
+
+            if (MeasurementQualityScore is null or < 0.65)
+                throw new InvalidOperationException(
+                    "A structured stenosis percentage requires measurement quality score >= 0.65.");
+
+            if (MeasurementFrameCount is null or < 2)
+                throw new InvalidOperationException(
+                    "A structured stenosis percentage requires measurements from at least two frames.");
+
+            if (MeasurementVariabilityPercent is null or > 18)
+                throw new InvalidOperationException(
+                    "A structured stenosis percentage requires multi-frame variability <= 18 percentage points.");
+
+            if (!ReferenceDiameterPixels.HasValue || !MinimumLumenDiameterPixels.HasValue)
+                throw new InvalidOperationException(
+                    "A structured stenosis percentage requires reference and minimum lumen diameters.");
+        }
+
         foreach (var evidence in Evidence)
             evidence.Validate();
     }
