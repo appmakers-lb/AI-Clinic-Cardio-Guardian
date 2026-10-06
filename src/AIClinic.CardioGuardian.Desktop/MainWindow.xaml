@@ -58,8 +58,10 @@
                     <Button Content="IMPORT AI FINDINGS JSON" Click="ImportFindings_Click" MinWidth="185"
                             ToolTip="Imports structured, versioned research-model output. It does not create findings from raw images by itself."/>
                     <Button Content="CONNECT LOCAL AI" Click="ConnectLocalAi_Click" MinWidth="145"/>
-                    <Button x:Name="AnalyzeButton" Content="RUN RESEARCH AI ON SELECTED CINE"
-                            Click="AnalyzeSelectedCine_Click" MinWidth="200" IsEnabled="False"/>
+                    <Button x:Name="AnalyzeButton" Style="{StaticResource PrimaryButton}"
+                            Content="RUN RESEARCH AI ON SELECTED CINE"
+                            Click="AnalyzeSelectedCine_Click" MinWidth="200" IsEnabled="False"
+                            ToolTip="Analyze the currently selected cine with the connected local research AI."/>
                     <Button x:Name="AnalyzeWholeCaseButton" Content="RUN RESEARCH AI WHOLE CASE"
                             Click="AnalyzeWholeCase_Click" MinWidth="175" IsEnabled="False"
                             ToolTip="Runs the connected research model across every imported cine series. Batch mode does not speak alerts while processing."/>
