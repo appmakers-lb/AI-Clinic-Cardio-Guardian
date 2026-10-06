@@ -62,9 +62,10 @@ public partial class MainWindow : Window
         RefreshAll();
         AppendAI(
             "Research Mode ready. Import a cardiac DICOM CD/USB to review all cine runs. " +
-            "The optional v1.4 research model only surfaces stenosis candidates that also have vessel support " +
-            "and temporal persistence. When geometry quality is sufficient it shows a wide-range apparent diameter " +
-            "reduction estimate. It is not clinical QCA and a negative result is never a clearance statement.");
+            "v1.4 selects higher-quality contrast-filled frames, measures sub-pixel lumen borders, " +
+            "uses strict physical-calibration rules, links compatible lesions across projections, " +
+            "and runs a separate persistent total-occlusion detector. " +
+            "Outputs remain research-only until externally validated; a negative result is never clinical clearance.");
     }
 
 
