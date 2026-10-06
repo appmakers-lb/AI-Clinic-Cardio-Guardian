@@ -119,7 +119,20 @@ def score_frame(
     vessel_mask = np.asarray(vessel_mask, dtype=bool)
 
     if image_n.shape != vessel_mask.shape:
-        raise ValueError("image and vessel mask must share the same shape")
+        if image_n.ndim != 2 or vessel_mask.ndim != 2:
+            raise ValueError("image and vessel mask must be 2-D")
+        zoom = (
+            vessel_mask.shape[0] / max(1, image_n.shape[0]),
+            vessel_mask.shape[1] / max(1, image_n.shape[1]),
+        )
+        image_n = ndi.zoom(image_n, zoom, order=1)
+        image_n = image_n[: vessel_mask.shape[0], : vessel_mask.shape[1]]
+        if image_n.shape != vessel_mask.shape:
+            padded = np.zeros(vessel_mask.shape, dtype=np.float32)
+            h = min(padded.shape[0], image_n.shape[0])
+            w = min(padded.shape[1], image_n.shape[1])
+            padded[:h, :w] = image_n[:h, :w]
+            image_n = padded
 
     vessel_fraction = float(vessel_mask.mean())
     if vessel_mask.sum() < 50:
