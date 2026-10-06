@@ -214,109 +214,68 @@ public partial class MainWindow : Window
         AnalyzeButton.IsEnabled = false;
         AnalyzeWholeCaseButton.IsEnabled = false;
 
-        var totalReturned = 0;
-        var totalAdded = 0;
-        var totalSkipped = 0;
-        var coverageApplied = 0;
-        var coverageRejected = 0;
-        var failures = new List<string>();
-        string? lastModelId = null;
-        string? lastModelVersion = null;
-
         try
         {
-            for (var i = 0; i < _series.Count; i++)
-            {
-                _analysisCts.Token.ThrowIfCancellationRequested();
+            StatusText.Text =
+                $"Whole-case research AI: analyzing {_series.Count} cine series and linking compatible projections…";
 
-                var series = _series[i];
-                StatusText.Text =
-                    $"Whole-case research AI: cine {i + 1}/{_series.Count} — {series.Id}";
+            var package = await _localAi.AnalyzeCaseAsync(_series, _analysisCts.Token);
+            ModelStatusText.Text = $"Local AI: {package.ModelId} {package.ModelVersion}";
 
-                try
-                {
-                    var package = await _localAi.AnalyzeSeriesAsync(series, _analysisCts.Token);
-                    lastModelId = package.ModelId;
-                    lastModelVersion = package.ModelVersion;
+            var findings = _structuredFindingService.ToGuardianFindings(package);
+            var results = _wholeCaseMemory.AddPackage(_case, findings);
+            var added = results.Count(x => x.Status == FindingAddStatus.Added);
+            var skipped = results.Count(x => x.Status != FindingAddStatus.Added);
 
-                    var findings = _structuredFindingService.ToGuardianFindings(package);
-                    totalReturned += findings.Count;
-
-                    var results = _wholeCaseMemory.AddPackage(_case, findings);
-                    totalAdded += results.Count(x => x.Status == FindingAddStatus.Added);
-                    totalSkipped += results.Count(x => x.Status != FindingAddStatus.Added);
-
-                    var coverage = _coverageEngine.ApplyStructuredCoverage(_case, package);
-                    coverageApplied += coverage.Applied;
-                    coverageRejected += coverage.Rejected;
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    failures.Add($"{series.Id}: {ex.Message}");
-                    _audit.Write("whole_case_series_analysis_failed", new { series.Id, ex.Message });
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(lastModelId))
-                ModelStatusText.Text = $"Local AI: {lastModelId} {lastModelVersion}";
+            var coverage = _coverageEngine.ApplyStructuredCoverage(_case, package);
 
             RefreshFindings();
             RefreshCoverage();
 
+            var multiView = findings.Count(x => x.MultiViewConfirmed);
             StatusText.Text =
-                $"Whole-case AI complete: {_series.Count - failures.Count}/{_series.Count} cine(s), " +
-                $"{totalReturned} finding(s), {totalAdded} added, {totalSkipped} duplicate/invalid; " +
-                $"coverage {coverageApplied} applied, {coverageRejected} rejected.";
+                $"Whole-case AI complete: {findings.Count} finding(s), {added} added, {skipped} duplicate/invalid; " +
+                $"{multiView} multi-view linked; coverage {coverage.Applied} applied, {coverage.Rejected} rejected.";
 
-            if (totalReturned == 0)
+            if (!string.IsNullOrWhiteSpace(package.AnalysisNote))
+                AppendAI(package.AnalysisNote);
+
+            if (findings.Count == 0)
             {
                 AppendAI(
-                    "Whole-case research analysis returned no candidates in the sampled frames. " +
+                    "No finding passed the frame-quality, vessel, QCA/occlusion, and multi-frame gates. " +
                     "This is not evidence of a normal study and is not clinical clearance.");
             }
 
             _audit.Write("whole_case_ai_analysis_completed", new
             {
                 seriesCount = _series.Count,
-                succeeded = _series.Count - failures.Count,
-                failed = failures.Count,
-                returned = totalReturned,
-                added = totalAdded,
-                skipped = totalSkipped,
-                coverageApplied,
-                coverageRejected,
-                modelId = lastModelId,
-                modelVersion = lastModelVersion
+                returned = findings.Count,
+                added,
+                skipped,
+                multiViewLinked = multiView,
+                coverageApplied = coverage.Applied,
+                coverageRejected = coverage.Rejected,
+                package.ModelId,
+                package.ModelVersion
             });
-
-            if (failures.Count > 0)
-            {
-                MessageBox.Show(
-                    $"Whole-case analysis completed with {failures.Count} cine failure(s).\n\n" +
-                    string.Join("\n", failures.Take(5)),
-                    "Whole-case analysis completed with warnings",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-            }
         }
         catch (OperationCanceledException)
         {
-            StatusText.Text =
-                $"Whole-case analysis cancelled. Findings already accepted remain in the research case.";
-            _audit.Write("whole_case_ai_analysis_cancelled", new
-            {
-                returned = totalReturned,
-                added = totalAdded,
-                skipped = totalSkipped,
-                coverageApplied,
-                coverageRejected
-            });
+            StatusText.Text = "Whole-case analysis cancelled.";
+            _audit.Write("whole_case_ai_analysis_cancelled");
             RefreshFindings();
             RefreshCoverage();
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "Whole-case AI analysis failed.";
+            _audit.Write("whole_case_ai_analysis_failed", new { ex.Message });
+            MessageBox.Show(
+                ex.Message,
+                "Whole-case AI analysis failed",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
         }
         finally
         {
@@ -326,7 +285,8 @@ public partial class MainWindow : Window
 
             var health = await _localAi.CheckHealthAsync();
             AnalyzeButton.IsEnabled = health.Reachable && health.ModelLoaded;
-            AnalyzeWholeCaseButton.IsEnabled = health.Reachable && health.ModelLoaded && _series.Count > 0;
+            AnalyzeWholeCaseButton.IsEnabled =
+                health.Reachable && health.ModelLoaded && _series.Count > 0;
         }
     }
 
