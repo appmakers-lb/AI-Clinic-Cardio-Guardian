@@ -11,7 +11,7 @@ public sealed class LocalAiGatewayService : IDisposable
     private readonly HttpClient _http = new()
     {
         BaseAddress = new Uri("http://127.0.0.1:8765"),
-        Timeout = TimeSpan.FromMinutes(2)
+        Timeout = TimeSpan.FromMinutes(15)
     };
 
     private readonly StructuredFindingService _structuredFindingService = new();
