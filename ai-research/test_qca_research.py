@@ -63,7 +63,7 @@ def test_candidate_off_vessel_abstains() -> None:
 
 def test_multiple_candidate_tracks_stay_separate() -> None:
     frames = [
-        _FrameRef(Path("dummy.dcm"), 0, frame, "MONOCHROME2", 512, 512, None, None, None)
+        _FrameRef(Path("dummy.dcm"), 0, frame, "MONOCHROME2", 512, 512, None, "", None, None)
         for frame in (0, 10, 20, 30)
     ]
     candidates = []
