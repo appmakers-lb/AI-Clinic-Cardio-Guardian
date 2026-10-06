@@ -1655,18 +1655,18 @@ public partial class MainWindow : Window
                 "SuspectedTotalOcclusion",
                 StringComparison.OrdinalIgnoreCase))
         {
-            var builder = new StringBuilder();
-            builder.Append("Separate total-occlusion detector: possible complete occlusion");
+            var occlusionBuilder = new StringBuilder();
+            occlusionBuilder.Append("Separate total-occlusion detector: possible complete occlusion");
             if (finding.TotalOcclusionScore is double score)
-                builder.Append($" | Detector score: {score:0.00}");
-            if (finding.TotalOcclusionFrameCount is int frames)
-                builder.Append($" | Supporting frames: {frames}");
+                occlusionBuilder.Append($" | Detector score: {score:0.00}");
+            if (finding.TotalOcclusionFrameCount is int occlusionFrames)
+                occlusionBuilder.Append($" | Supporting frames: {occlusionFrames}");
             if (!string.IsNullOrWhiteSpace(finding.MeasurementQuality))
-                builder.Append($" | Quality: {finding.MeasurementQuality}");
-            builder.AppendLine();
-            builder.Append("If the physician confirms total occlusion, anatomic diameter stenosis is 100%. ");
-            builder.Append("Chronicity is not established by the image detector; this is not by itself a CTO diagnosis.");
-            return builder.ToString();
+                occlusionBuilder.Append($" | Quality: {finding.MeasurementQuality}");
+            occlusionBuilder.AppendLine();
+            occlusionBuilder.Append("If the physician confirms total occlusion, anatomic diameter stenosis is 100%. ");
+            occlusionBuilder.Append("Chronicity is not established by the image detector; this is not by itself a CTO diagnosis.");
+            return occlusionBuilder.ToString();
         }
 
         if (finding.EstimatedDiameterStenosisPercent is not double estimate)
