@@ -57,12 +57,12 @@ public partial class MainWindow : Window
         VoiceStatusText.Text = $"Speech recognition: {_voice.RecognitionStatus}";
         ListenButton.IsEnabled = _voice.SpeechRecognitionAvailable;
 
-        _audit.Write("application_started", new { version = "1.2.1", mode = "RESEARCH" });
+        _audit.Write("application_started", new { version = "1.3.0", mode = "RESEARCH" });
 
         RefreshAll();
         AppendAI(
             "Research Mode ready. Import a cardiac DICOM CD/USB to review all cine runs. " +
-            "The optional v1.2.1 research model only surfaces stenosis candidates that also have vessel support " +
+            "The optional v1.3 research model only surfaces stenosis candidates that also have vessel support " +
             "and temporal persistence. When geometry quality is sufficient it shows a wide-range apparent diameter " +
             "reduction estimate. It is not clinical QCA and a negative result is never a clearance statement.");
     }
@@ -992,8 +992,8 @@ public partial class MainWindow : Window
 
         var labelText = _selectedFinding!.EstimatedDiameterStenosisPercent is double estimate
             ? (_findingFocusMode
-                ? $"FOCUS • ~{estimate:0}% apparent narrowing • Esc to exit"
-                : $"RESEARCH AI • ~{estimate:0}% apparent narrowing")
+                ? $"FOCUS • QCA ~{estimate:0}% • Esc to exit"
+                : $"RESEARCH QCA • ~{estimate:0}% diameter stenosis")
             : (_findingFocusMode
                 ? $"FOCUS • candidate score {_selectedFinding.Confidence:0.00} • Esc to exit"
                 : $"RESEARCH AI CANDIDATE • score {_selectedFinding.Confidence:0.00}");
@@ -1147,7 +1147,7 @@ public partial class MainWindow : Window
         DrawSelectedFindingOverlay();
 
         var estimateText = _selectedFinding?.EstimatedDiameterStenosisPercent is double estimate
-            ? $"~{estimate:0}% apparent narrowing"
+            ? $"QCA ~{estimate:0}% diameter stenosis"
             : $"candidate score {_selectedFinding?.Confidence:0.00}";
 
         StatusText.Text =
@@ -1587,7 +1587,8 @@ public partial class MainWindow : Window
             {
                 Content =
                     $"{marker} {finding.Vessel} {finding.Segment} — {HumanizeFindingType(finding.FindingType)} " +
-                    $"{(finding.EstimatedDiameterStenosisPercent is double estimate ? $"[~{estimate:0}% apparent]" : $"[score {finding.Confidence:0.00}]")} " +
+                    $"{(finding.EstimatedDiameterStenosisPercent is double estimate ? $"[~{estimate:0}% QCA]" : $"[score {finding.Confidence:0.00}]")} " +
+                    $"{(!string.IsNullOrWhiteSpace(finding.MeasurementQuality) ? $"[{finding.MeasurementQuality}]" : string.Empty)} " +
                     $"[{sourceMarker}] [{finding.Status}]",
                 Tag = finding
             };
@@ -1642,15 +1643,51 @@ public partial class MainWindow : Window
     private static string BuildResearchEstimateLabel(GuardianFinding finding)
     {
         if (finding.EstimatedDiameterStenosisPercent is not double estimate)
-            return "Apparent diameter reduction: not estimable from current research evidence.";
+            return "Research QCA: measurement withheld because current evidence did not pass quality gates.";
+
+        var builder = new StringBuilder();
+        builder.Append($"Research QCA diameter stenosis: ~{estimate:0.#}%");
 
         if (finding.EstimatedDiameterStenosisLowerPercent is double lower &&
             finding.EstimatedDiameterStenosisUpperPercent is double upper)
         {
-            return $"Research apparent diameter reduction: ~{estimate:0}% (wide range {lower:0}-{upper:0}%).";
+            builder.Append($" (range {lower:0.#}-{upper:0.#}%)");
         }
 
-        return $"Research apparent diameter reduction: ~{estimate:0}%.";
+        if (!string.IsNullOrWhiteSpace(finding.MeasurementQuality))
+            builder.Append($" | Quality: {finding.MeasurementQuality}");
+
+        if (finding.MeasurementFrameCount is int frames)
+            builder.Append($" | Measured frames: {frames}");
+
+        if (finding.MeasurementVariabilityPercent is double variability)
+            builder.Append($" | Variability: {variability:0.#} pp");
+
+        builder.AppendLine();
+
+        if (finding.ReferenceDiameterMm is double referenceMm &&
+            finding.MinimumLumenDiameterMm is double mldMm)
+        {
+            builder.Append($"Reference: {referenceMm:0.00} mm | MLD: {mldMm:0.00} mm");
+            if (finding.LesionLengthMm is double lengthMm)
+                builder.Append($" | Lesion length: {lengthMm:0.0} mm");
+
+            if (!string.IsNullOrWhiteSpace(finding.CalibrationSource))
+                builder.Append($" | {finding.CalibrationSource}");
+        }
+        else if (finding.ReferenceDiameterPixels is double referencePx &&
+                 finding.MinimumLumenDiameterPixels is double mldPx)
+        {
+            builder.Append($"Reference: {referencePx:0.0} px | MLD: {mldPx:0.0} px");
+            if (finding.LesionLengthPixels is double lengthPx)
+                builder.Append($" | Lesion length: {lengthPx:0.0} px");
+            builder.Append(" | Physical calibration unavailable");
+        }
+
+        builder.AppendLine();
+        builder.Append("Research measurement — not certified clinical QCA.");
+
+        return builder.ToString();
     }
 
     private static string HumanizeFindingType(string type) =>
