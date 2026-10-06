@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+
+from multiview_linker import link_findings_across_views
 from pydantic import BaseModel, Field, field_validator
 
 try:
@@ -20,7 +22,7 @@ try:
 except Exception:
     MODEL_PLUGIN = None
 
-SERVICE_VERSION = "1.3.0"
+SERVICE_VERSION = "1.4.0"
 app = FastAPI(
     title="AI Clinic Cardio Guardian Research Gateway",
     version=SERVICE_VERSION,
@@ -33,6 +35,10 @@ class SeriesRequest(BaseModel):
     seriesInstanceUid: str = Field(default="", max_length=128)
     modality: str = Field(default="", max_length=32)
     projection: str = Field(default="", max_length=256)
+    seriesDescription: str = Field(default="", max_length=512)
+    protocolName: str = Field(default="", max_length=512)
+    catheterCalibrationMmPerPixel: float | None = Field(default=None, gt=0.0, le=10.0)
+    catheterCalibrationSource: str = Field(default="", max_length=512)
     frameCount: int = Field(default=0, ge=0)
     estimatedFramesPerSecond: float = Field(default=0.0, ge=0.0, le=240.0)
     filePaths: list[str] = Field(min_length=1)
@@ -49,6 +55,11 @@ class SeriesRequest(BaseModel):
                 raise ValueError("Every model input path must be absolute")
             cleaned.append(str(path))
         return cleaned
+
+
+class CaseRequest(BaseModel):
+    series: list[SeriesRequest] = Field(min_length=1)
+
 
 
 @app.get("/health")
@@ -104,6 +115,56 @@ def analyze_series(request: SeriesRequest) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail="Research model adapter findings must be an array.")
 
     return result
+
+
+@app.post("/analyze-case")
+def analyze_case(request: CaseRequest) -> dict[str, Any]:
+    if not MODEL_PLUGIN or not getattr(MODEL_PLUGIN, "is_loaded", False):
+        raise HTTPException(
+            status_code=503,
+            detail="No versioned research model plugin is loaded.",
+        )
+
+    model_id = str(getattr(MODEL_PLUGIN, "model_id", "")).strip()
+    model_version = str(getattr(MODEL_PLUGIN, "model_version", "")).strip()
+    if not model_id or not model_version or model_id == "NO_MODEL":
+        raise HTTPException(
+            status_code=503,
+            detail="Loaded model adapter does not expose a valid model ID/version.",
+        )
+
+    all_findings: list[dict[str, Any]] = []
+    notes: list[str] = []
+    failures: list[str] = []
+
+    for series in request.series:
+        try:
+            result = MODEL_PLUGIN.analyze_series(series.model_dump())
+        except Exception as exc:
+            failures.append(f"{series.sourceId}: {exc}")
+            continue
+
+        findings = result.get("findings", [])
+        if isinstance(findings, list):
+            all_findings.extend(
+                item for item in findings if isinstance(item, dict)
+            )
+
+        note = str(result.get("analysisNote", "") or "").strip()
+        if note:
+            notes.append(f"{series.sourceId}: {note}")
+
+    linked = link_findings_across_views(all_findings)
+
+    return {
+        "modelId": model_id,
+        "modelVersion": model_version,
+        "generatedAtUtc": datetime.now(timezone.utc).isoformat(),
+        "findings": linked,
+        "coverage": [],
+        "analysisNote": " ".join(notes),
+        "seriesFailures": failures,
+    }
 
 
 if __name__ == "__main__":
