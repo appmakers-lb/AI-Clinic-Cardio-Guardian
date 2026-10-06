@@ -191,8 +191,14 @@
                                           MediaOpened="CinePlayer_MediaOpened"
                                           MediaEnded="CinePlayer_MediaEnded"
                                           Visibility="Collapsed"/>
-                            <Image x:Name="DicomFrameImage" Stretch="Uniform" Visibility="Collapsed"/>
-                            <Canvas x:Name="OverlayCanvas" IsHitTestVisible="False"/>
+                            <Image x:Name="DicomFrameImage"
+                                   Stretch="Uniform"
+                                   StretchDirection="Both"
+                                   HorizontalAlignment="Stretch"
+                                   VerticalAlignment="Stretch"
+                                   Margin="5"
+                                   Visibility="Collapsed"/>
+                            <Canvas x:Name="OverlayCanvas" Margin="5" IsHitTestVisible="False"/>
                         </Grid>
 
                         <StackPanel x:Name="ViewerPlaceholder" HorizontalAlignment="Center"
