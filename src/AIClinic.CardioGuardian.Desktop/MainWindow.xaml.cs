@@ -146,7 +146,7 @@ public partial class MainWindow : Window
             var skipped = results.Count(x => x.Status != FindingAddStatus.Added);
             ModelStatusText.Text = $"Local AI: {package.ModelId} {package.ModelVersion}";
             StatusText.Text =
-                $"Research AI: {findings.Count} finding(s), {addedFindings.Length} added, {skipped} duplicate/invalid; " +
+                $"Research AI: {findings.Count} QCA-qualified finding(s), {addedFindings.Length} added, {skipped} duplicate/invalid; " +
                 $"coverage {coverage.Applied} applied, {coverage.Rejected} rejected.";
 
             RefreshFindings();
@@ -154,9 +154,11 @@ public partial class MainWindow : Window
 
             if (findings.Count == 0)
             {
+                var abstention = package.AnalysisNote.OrFallback(
+                    "No candidate passed the multi-frame vessel/QCA quality gates.");
                 AppendAI(
-                    "The research model returned no candidate on the sampled frames. " +
-                    "This must not be interpreted as no stenosis or a normal study.");
+                    abstention + " This must not be interpreted as no stenosis or a normal study.");
+                StatusText.Text = "No QCA-qualified finding reported — review analysis note/evidence quality.";
             }
 
             _audit.Write("local_ai_analysis_completed", new
