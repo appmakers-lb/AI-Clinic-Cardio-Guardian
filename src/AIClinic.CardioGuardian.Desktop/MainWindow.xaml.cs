@@ -235,7 +235,7 @@ public partial class MainWindow : Window
                 if (!analysisTask.IsCompleted)
                 {
                     StatusText.Text =
-                        $"Whole-case research AI working… {stopwatch.Elapsed.ToString(@"mm\\:ss")} elapsed | " +
+                        $"Whole-case research AI working… {stopwatch.Elapsed.ToString(@"mm\:ss")} elapsed | " +
                         $"quality selection → vessel segmentation → QCA/occlusion → multi-view linking";
                 }
             }
@@ -256,7 +256,7 @@ public partial class MainWindow : Window
 
             var multiView = findings.Count(x => x.MultiViewConfirmed);
             StatusText.Text =
-                $"Whole-case AI complete in {stopwatch.Elapsed.ToString(@"mm\\:ss")}: {findings.Count} finding(s), " +
+                $"Whole-case AI complete in {stopwatch.Elapsed.ToString(@"mm\:ss")}: {findings.Count} finding(s), " +
                 $"{added} added, {skipped} duplicate/invalid; {multiView} multi-view linked; " +
                 $"coverage {coverage.Applied} applied, {coverage.Rejected} rejected.";
 
