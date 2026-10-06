@@ -36,7 +36,7 @@ ROOT = Path(__file__).resolve().parent
 STENOSIS_MODEL_PATH = ROOT / "models" / "unet_stenosis.pt"
 VESSEL_MODEL_PATH = ROOT / "models" / "unet_vessel.pt"
 MODEL_ID = "CARDIO_GUARDIAN_XCA_QCA_RESEARCH"
-MODEL_VERSION = "2026-demo-4"
+MODEL_VERSION = "2026-demo-4.1"
 INPUT_SIZE = 512
 
 
