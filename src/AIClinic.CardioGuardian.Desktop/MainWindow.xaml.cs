@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Windows;
@@ -218,9 +219,29 @@ public partial class MainWindow : Window
         try
         {
             StatusText.Text =
-                $"Whole-case research AI: analyzing {_series.Count} cine series and linking compatible projections…";
+                $"Whole-case research AI started: {_series.Count} cine series. Preparing high-quality frames…";
 
-            var package = await _localAi.AnalyzeCaseAsync(_series, _analysisCts.Token);
+            var stopwatch = Stopwatch.StartNew();
+            var analysisTask = _localAi.AnalyzeCaseAsync(_series, _analysisCts.Token);
+
+            while (!analysisTask.IsCompleted)
+            {
+                await Task.WhenAny(
+                    analysisTask,
+                    Task.Delay(TimeSpan.FromSeconds(1), _analysisCts.Token));
+
+                _analysisCts.Token.ThrowIfCancellationRequested();
+
+                if (!analysisTask.IsCompleted)
+                {
+                    StatusText.Text =
+                        $"Whole-case research AI working… {stopwatch.Elapsed:mm\\:ss} elapsed | " +
+                        $"quality selection → vessel segmentation → QCA/occlusion → multi-view linking";
+                }
+            }
+
+            var package = await analysisTask;
+            stopwatch.Stop();
             ModelStatusText.Text = $"Local AI: {package.ModelId} {package.ModelVersion}";
 
             var findings = _structuredFindingService.ToGuardianFindings(package);
@@ -235,8 +256,9 @@ public partial class MainWindow : Window
 
             var multiView = findings.Count(x => x.MultiViewConfirmed);
             StatusText.Text =
-                $"Whole-case AI complete: {findings.Count} finding(s), {added} added, {skipped} duplicate/invalid; " +
-                $"{multiView} multi-view linked; coverage {coverage.Applied} applied, {coverage.Rejected} rejected.";
+                $"Whole-case AI complete in {stopwatch.Elapsed:mm\\:ss}: {findings.Count} finding(s), " +
+                $"{added} added, {skipped} duplicate/invalid; {multiView} multi-view linked; " +
+                $"coverage {coverage.Applied} applied, {coverage.Rejected} rejected.";
 
             if (!string.IsNullOrWhiteSpace(package.AnalysisNote))
                 AppendAI(package.AnalysisNote);
