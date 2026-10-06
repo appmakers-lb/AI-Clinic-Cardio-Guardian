@@ -138,6 +138,13 @@ var package = service.Parse("""
       "estimatedDiameterStenosisPercent": 72,
       "estimatedDiameterStenosisLowerPercent": 57,
       "estimatedDiameterStenosisUpperPercent": 87,
+      "referenceDiameterPixels": 20.0,
+      "minimumLumenDiameterPixels": 5.6,
+      "lesionLengthPixels": 18.0,
+      "measurementQuality": "High",
+      "measurementQualityScore": 0.91,
+      "measurementFrameCount": 4,
+      "measurementVariabilityPercent": 6.0,
       "explanation": "Synthetic unit-test payload",
       "evidence": [
         { "sourceId": "SER-1", "frameStart": 1, "frameEnd": 5, "projection": "LAO", "description": "test" }
@@ -153,6 +160,11 @@ Assert(converted[0].EstimatedDiameterStenosisPercent == 72 &&
        converted[0].EstimatedDiameterStenosisLowerPercent == 57 &&
        converted[0].EstimatedDiameterStenosisUpperPercent == 87,
        "structured research narrowing estimate preserved");
+Assert(converted[0].ReferenceDiameterPixels == 20.0 &&
+       converted[0].MinimumLumenDiameterPixels == 5.6 &&
+       converted[0].MeasurementQuality == "High" &&
+       converted[0].MeasurementFrameCount == 4,
+       "structured QCA geometry and quality metadata preserved");
 
 var noModelBlocked = false;
 try
@@ -354,5 +366,31 @@ try
 }
 catch (InvalidOperationException) { invalidEstimateBlocked = true; }
 Assert(invalidEstimateBlocked, "out-of-range research narrowing estimate blocked");
+
+var invalidQcaGeometryBlocked = false;
+try
+{
+    c.AddFinding(new GuardianFinding
+    {
+        Id = "F-BAD-QCA-GEOMETRY",
+        Vessel = "Unspecified coronary vessel",
+        Segment = "image-level review",
+        FindingType = "SuspectedStenosis",
+        Confidence = 0.9,
+        Priority = FindingPriority.Review,
+        Source = FindingSource.StructuredResearchModel,
+        SourceVersion = "research-model:3",
+        EstimatedDiameterStenosisPercent = 50,
+        ReferenceDiameterPixels = 5,
+        MinimumLumenDiameterPixels = 8,
+        MeasurementQuality = "High",
+        MeasurementQualityScore = 0.9,
+        MeasurementFrameCount = 3,
+        MeasurementVariabilityPercent = 5,
+        Evidence = new[] { new EvidenceReference("SER-1", 2, 2, "RAO", "test") }
+    });
+}
+catch (InvalidOperationException) { invalidQcaGeometryBlocked = true; }
+Assert(invalidQcaGeometryBlocked, "QCA geometry rejects MLD larger than reference diameter");
 
 Console.WriteLine("All core safety tests passed.");
