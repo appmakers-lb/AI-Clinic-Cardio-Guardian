@@ -1,13 +1,17 @@
-"""Stenoz ARCADE XCA research adapter for Cardio Guardian.
+"""Coronary XCA research adapter for Cardio Guardian v1.3.
 
-Research/demo only. This adapter does not diagnose coronary disease, does not
-identify a coronary artery name, and does not perform clinical QCA. It combines:
+This is a real image-analysis pipeline for retrospective/research work:
 - direct stenosis-candidate localization,
-- a separate vessel segmentation model,
-- temporal persistence across sampled cine frames,
-- conservative local geometry for an apparent diameter-reduction estimate.
+- coronary vessel segmentation,
+- temporal persistence across cine frames,
+- conservative research QCA measurement with bilateral reference vessel,
+- multi-frame consistency gates,
+- evidence-linked output.
 
-Negative output is never clinical clearance. Complete occlusion is not inferred.
+It is NOT clinically validated, certified QCA, or a diagnostic device.
+If the geometry/quality gates fail, the adapter abstains instead of reporting
+a percentage. A negative result is never clinical clearance. A 100% total
+occlusion is never inferred from ordinary diameter-stenosis measurement.
 """
 from __future__ import annotations
 
@@ -20,13 +24,13 @@ from typing import Any, Iterable
 
 import numpy as np
 
-from stenoz_geometry import estimate_apparent_narrowing
+from qca_research import ResearchQcaMeasurement, measure_qca
 
 ROOT = Path(__file__).resolve().parent
 STENOSIS_MODEL_PATH = ROOT / "models" / "unet_stenosis.pt"
 VESSEL_MODEL_PATH = ROOT / "models" / "unet_vessel.pt"
-MODEL_ID = "STENOZ_ARCADE_XCA_RESEARCH"
-MODEL_VERSION = "2026-demo-2"
+MODEL_ID = "CARDIO_GUARDIAN_XCA_QCA_RESEARCH"
+MODEL_VERSION = "2026-demo-3"
 INPUT_SIZE = 512
 
 
@@ -36,6 +40,11 @@ class _FrameRef:
     local_index: int
     global_index: int
     photometric: str
+    rows: int
+    columns: int
+    pixel_spacing_row_mm: float | None
+    pixel_spacing_column_mm: float | None
+    calibration_source: str | None
 
 
 @dataclass(frozen=True)
@@ -50,9 +59,16 @@ class _Candidate:
 @dataclass(frozen=True)
 class _CandidateGroup:
     winner: _Candidate
+    members: tuple[_Candidate, ...]
     support_count: int
     first_frame: int
     last_frame: int
+
+
+@dataclass(frozen=True)
+class _MeasuredCandidate:
+    candidate: _Candidate
+    measurement: ResearchQcaMeasurement
 
 
 class StenozResearchPlugin:
@@ -128,6 +144,8 @@ class StenozResearchPlugin:
         threshold = float(os.getenv("CARDIO_STENOZ_THRESHOLD", "0.70"))
         min_area = max(20, int(os.getenv("CARDIO_STENOZ_MIN_AREA", "40")))
         min_support = max(2, int(os.getenv("CARDIO_STENOZ_MIN_SUPPORT", "2")))
+        min_qca_frames = max(2, int(os.getenv("CARDIO_QCA_MIN_FRAMES", "2")))
+        max_qca_variability = float(os.getenv("CARDIO_QCA_MAX_VARIABILITY_PERCENT", "18"))
 
         candidates: list[_Candidate] = []
         for ref in sample_refs:
@@ -138,86 +156,204 @@ class StenozResearchPlugin:
 
         grouped = self._group_candidates(candidates, sample_refs)
         grouped = [g for g in grouped if g.support_count >= min_support]
-
         frame_by_index = {ref.global_index: ref for ref in frame_refs}
+
         findings: list[dict[str, Any]] = []
-        rejected_geometry = 0
+        rejected_temporal_or_qca = 0
 
-        for rank, group in enumerate(grouped[:6], start=1):
-            candidate = group.winner
-            frame_ref = frame_by_index.get(candidate.frame)
-            if frame_ref is None:
+        for rank, group in enumerate(grouped[:8], start=1):
+            measured: list[_MeasuredCandidate] = []
+
+            # Measure several independent frames. A single frame is not enough
+            # to publish a stenosis percentage.
+            members = sorted(group.members, key=lambda c: c.confidence, reverse=True)[:6]
+            for candidate in members:
+                frame_ref = frame_by_index.get(candidate.frame)
+                if frame_ref is None:
+                    continue
+
+                image = self._read_frame(frame_ref)
+                vessel_mask = self._segment_vessels(image)
+                spacing_mm, calibration_source = self._model_grid_spacing(frame_ref)
+
+                measurement = measure_qca(
+                    vessel_mask,
+                    candidate_x=candidate.x,
+                    candidate_y=candidate.y,
+                    pixel_spacing_mm=spacing_mm,
+                    calibration_source=calibration_source,
+                )
+                if measurement is not None:
+                    measured.append(_MeasuredCandidate(candidate, measurement))
+
+            if len(measured) < min_qca_frames:
+                rejected_temporal_or_qca += 1
                 continue
 
-            image = self._read_frame(frame_ref)
-            vessel_mask = self._segment_vessels(image)
-            estimate = estimate_apparent_narrowing(
-                vessel_mask,
-                candidate_x=candidate.x,
-                candidate_y=candidate.y,
+            percents = np.asarray(
+                [m.measurement.diameter_stenosis_percent for m in measured],
+                dtype=float,
             )
+            median_percent = float(np.median(percents))
+            variability = float(np.max(percents) - np.min(percents))
+            mad = float(np.median(np.abs(percents - median_percent)))
 
-            # Product goal: surface suspected narrowed vessel regions, not every
-            # direct-model heatmap. If vessel geometry does not support the
-            # candidate, do not show it as a stenosis finding.
-            if estimate is None:
-                rejected_geometry += 1
+            # Strong abstention gate: a lesion percentage is not reported when
+            # the same candidate is unstable across the sampled cine frames.
+            if variability > max_qca_variability:
+                rejected_temporal_or_qca += 1
                 continue
+
+            quality_scores = np.asarray(
+                [m.measurement.quality_score for m in measured],
+                dtype=float,
+            )
+            aggregate_quality = float(np.median(quality_scores))
+            if aggregate_quality < 0.65:
+                rejected_temporal_or_qca += 1
+                continue
+
+            if aggregate_quality >= 0.80 and variability <= 8 and len(measured) >= 3:
+                quality_label = "High"
+            else:
+                quality_label = "Moderate"
+
+            uncertainty = max(8.0, 2.0 * 1.4826 * mad, variability / 2.0)
+            lower = float(np.clip(median_percent - uncertainty, 0.0, 95.0))
+            upper = float(np.clip(median_percent + uncertainty, 0.0, 95.0))
+
+            representative = min(
+                measured,
+                key=lambda m: abs(m.measurement.diameter_stenosis_percent - median_percent),
+            )
+            candidate = representative.candidate
+
+            reference_px = float(np.median(
+                [m.measurement.reference_diameter_px for m in measured]
+            ))
+            mld_px = float(np.median(
+                [m.measurement.minimum_lumen_diameter_px for m in measured]
+            ))
+            lesion_length_px = float(np.median(
+                [m.measurement.lesion_length_px for m in measured]
+            ))
+
+            mm_measurements = [
+                m.measurement
+                for m in measured
+                if m.measurement.reference_diameter_mm is not None
+                and m.measurement.minimum_lumen_diameter_mm is not None
+                and m.measurement.lesion_length_mm is not None
+            ]
+            reference_mm = mld_mm = lesion_length_mm = None
+            calibration_source = None
+            if len(mm_measurements) >= min_qca_frames:
+                calibration_names = {
+                    str(m.calibration_source)
+                    for m in mm_measurements
+                    if m.calibration_source
+                }
+                if len(calibration_names) == 1:
+                    reference_mm = float(np.median(
+                        [m.reference_diameter_mm for m in mm_measurements if m.reference_diameter_mm is not None]
+                    ))
+                    mld_mm = float(np.median(
+                        [m.minimum_lumen_diameter_mm for m in mm_measurements if m.minimum_lumen_diameter_mm is not None]
+                    ))
+                    lesion_length_mm = float(np.median(
+                        [m.lesion_length_mm for m in mm_measurements if m.lesion_length_mm is not None]
+                    ))
+                    calibration_source = next(iter(calibration_names))
 
             digest = sha256(
-                f"{source_id}|{candidate.frame}|{candidate.x:.3f}|{candidate.y:.3f}".encode("utf-8")
+                f"{source_id}|{candidate.frame}|{candidate.x:.3f}|{candidate.y:.3f}|{median_percent:.2f}".encode("utf-8")
             ).hexdigest()[:12]
 
-            high_priority = candidate.confidence >= 0.80 and estimate.percent >= 70.0
+            high_priority = (
+                candidate.confidence >= 0.80
+                and median_percent >= 70.0
+                and quality_label in {"High", "Moderate"}
+            )
+
+            evidence = []
+            ordered_measured = [representative] + [m for m in measured if m is not representative]
+            for evidence_rank, item in enumerate(ordered_measured[:3], start=1):
+                e_candidate = item.candidate
+                e_measurement = item.measurement
+                evidence.append(
+                    {
+                        "sourceId": source_id,
+                        "frameStart": e_candidate.frame,
+                        "frameEnd": e_candidate.frame,
+                        "projection": projection,
+                        "normalizedCenterX": round(e_candidate.x / INPUT_SIZE, 6),
+                        "normalizedCenterY": round(e_candidate.y / INPUT_SIZE, 6),
+                        "normalizedRadius": round(
+                            min(
+                                0.18,
+                                max(
+                                    0.035,
+                                    (math.sqrt(e_candidate.area / math.pi) / INPUT_SIZE) * 1.6,
+                                ),
+                            ),
+                            6,
+                        ),
+                        "description": (
+                            f"QCA evidence {evidence_rank}; direct-model score "
+                            f"{e_candidate.confidence:.2f}; frame stenosis estimate "
+                            f"{e_measurement.diameter_stenosis_percent:.1f}%; "
+                            f"geometry quality {e_measurement.quality_label}. "
+                            "Research measurement only."
+                        ),
+                    }
+                )
+
+            physical_summary = (
+                f" Reference diameter {reference_mm:.2f} mm; MLD {mld_mm:.2f} mm; "
+                f"lesion length {lesion_length_mm:.1f} mm; {calibration_source}."
+                if reference_mm is not None and mld_mm is not None and lesion_length_mm is not None
+                else (
+                    f" Reference diameter {reference_px:.1f} px; MLD {mld_px:.1f} px; "
+                    f"lesion length {lesion_length_px:.1f} px. No reliable physical calibration."
+                )
+            )
+
             findings.append(
                 {
-                    "id": f"stenoz-{digest}",
+                    "id": f"qca-{digest}",
                     "vessel": "Unspecified coronary vessel",
                     "segment": "image-level review",
                     "findingType": "SuspectedStenosis",
                     "confidence": round(candidate.confidence, 4),
-                    "estimatedDiameterStenosisPercent": round(estimate.percent, 1),
-                    "estimatedDiameterStenosisLowerPercent": round(estimate.lower, 1),
-                    "estimatedDiameterStenosisUpperPercent": round(estimate.upper, 1),
+                    "estimatedDiameterStenosisPercent": round(median_percent, 1),
+                    "estimatedDiameterStenosisLowerPercent": round(lower, 1),
+                    "estimatedDiameterStenosisUpperPercent": round(upper, 1),
+                    "referenceDiameterPixels": round(reference_px, 2),
+                    "minimumLumenDiameterPixels": round(mld_px, 2),
+                    "lesionLengthPixels": round(lesion_length_px, 2),
+                    "referenceDiameterMm": round(reference_mm, 3) if reference_mm is not None else None,
+                    "minimumLumenDiameterMm": round(mld_mm, 3) if mld_mm is not None else None,
+                    "lesionLengthMm": round(lesion_length_mm, 3) if lesion_length_mm is not None else None,
+                    "measurementQuality": quality_label,
+                    "measurementQualityScore": round(aggregate_quality, 4),
+                    "measurementFrameCount": len(measured),
+                    "measurementVariabilityPercent": round(variability, 2),
+                    "calibrationSource": calibration_source,
                     "priority": "HighPriorityReview" if high_priority else "Review",
                     "explanation": (
-                        "Research-only candidate supported by direct stenosis localization, "
-                        "temporal persistence, and vessel segmentation. "
-                        "The system does not know the coronary artery name yet and this is not a diagnosis."
+                        "Research QCA candidate supported by a direct stenosis model, "
+                        "coronary vessel segmentation, bilateral reference-vessel geometry, "
+                        "and repeatable measurements across multiple sampled cine frames. "
+                        "Coronary artery identity is not yet automatically assigned."
                     ),
                     "measurementSummary": (
-                        f"Research apparent diameter reduction ~{estimate.percent:.0f}% "
-                        f"(wide range {estimate.lower:.0f}-{estimate.upper:.0f}%). "
-                        "Uncalibrated 2D estimate; not clinical QCA. "
-                        "Complete occlusion is not inferred by this method."
+                        f"Research diameter stenosis {median_percent:.1f}% "
+                        f"(range {lower:.1f}-{upper:.1f}%); {quality_label} measurement quality; "
+                        f"{len(measured)} measured frame(s); variability {variability:.1f} percentage points."
+                        + physical_summary
+                        + " Not certified clinical QCA."
                     ),
-                    "evidence": [
-                        {
-                            "sourceId": source_id,
-                            "frameStart": candidate.frame,
-                            "frameEnd": candidate.frame,
-                            "projection": projection,
-                            "normalizedCenterX": round(candidate.x / INPUT_SIZE, 6),
-                            "normalizedCenterY": round(candidate.y / INPUT_SIZE, 6),
-                            "normalizedRadius": round(
-                                min(
-                                    0.18,
-                                    max(
-                                        0.035,
-                                        (math.sqrt(candidate.area / math.pi) / INPUT_SIZE) * 1.6,
-                                    ),
-                                ),
-                                6,
-                            ),
-                            "description": (
-                                f"Research candidate rank {rank}; direct-model score "
-                                f"{candidate.confidence:.2f}; persisted on {group.support_count} sampled frame(s); "
-                                f"apparent diameter reduction estimate {estimate.percent:.0f}% "
-                                f"({estimate.lower:.0f}-{estimate.upper:.0f}% wide research range). "
-                                "Not a diagnosis or clinical QCA."
-                            ),
-                        }
-                    ],
+                    "evidence": evidence,
                 }
             )
 
@@ -227,9 +363,9 @@ class StenozResearchPlugin:
             "findings": findings[:3],
             "coverage": [],
             "analysisNote": (
-                f"Research adapter sampled {len(sample_refs)} of {len(frame_refs)} frame(s); "
-                f"{rejected_geometry} temporally persistent direct candidate(s) were rejected "
-                "because vessel geometry did not support them. "
+                f"Sampled {len(sample_refs)} of {len(frame_refs)} frame(s). "
+                f"{rejected_temporal_or_qca} persistent candidate group(s) were withheld "
+                "because multi-frame QCA quality/consistency gates failed. "
                 "No finding must never be interpreted as normal or disease-free."
             ),
         }
@@ -247,11 +383,63 @@ class StenozResearchPlugin:
                 count = int(getattr(ds, "NumberOfFrames", 1) or 1)
             except Exception:
                 count = 1
+
             photometric = str(getattr(ds, "PhotometricInterpretation", "") or "")
+            rows = int(getattr(ds, "Rows", INPUT_SIZE) or INPUT_SIZE)
+            columns = int(getattr(ds, "Columns", INPUT_SIZE) or INPUT_SIZE)
+            row_mm, column_mm, calibration_source = self._extract_spacing(ds)
 
             for local_index in range(max(1, count)):
-                yield _FrameRef(path, local_index, global_index, photometric)
+                yield _FrameRef(
+                    path=path,
+                    local_index=local_index,
+                    global_index=global_index,
+                    photometric=photometric,
+                    rows=rows,
+                    columns=columns,
+                    pixel_spacing_row_mm=row_mm,
+                    pixel_spacing_column_mm=column_mm,
+                    calibration_source=calibration_source,
+                )
                 global_index += 1
+
+    @staticmethod
+    def _extract_spacing(ds: Any) -> tuple[float | None, float | None, str | None]:
+        for attribute, label in (
+            ("PixelSpacing", "DICOM PixelSpacing image-plane research calibration"),
+            ("ImagerPixelSpacing", "DICOM ImagerPixelSpacing detector-plane research calibration"),
+        ):
+            value = getattr(ds, attribute, None)
+            if value is None:
+                continue
+            try:
+                row_mm = float(value[0])
+                column_mm = float(value[1])
+            except Exception:
+                continue
+            if row_mm > 0 and column_mm > 0 and math.isfinite(row_mm) and math.isfinite(column_mm):
+                return row_mm, column_mm, label
+        return None, None, None
+
+    @staticmethod
+    def _model_grid_spacing(ref: _FrameRef) -> tuple[float | None, str | None]:
+        if (
+            ref.pixel_spacing_row_mm is None
+            or ref.pixel_spacing_column_mm is None
+            or not ref.calibration_source
+            or ref.rows <= 0
+            or ref.columns <= 0
+        ):
+            return None, None
+
+        row_on_grid = ref.pixel_spacing_row_mm * ref.rows / INPUT_SIZE
+        column_on_grid = ref.pixel_spacing_column_mm * ref.columns / INPUT_SIZE
+        ratio = max(row_on_grid, column_on_grid) / max(1e-9, min(row_on_grid, column_on_grid))
+        if ratio > 1.10:
+            return None, None
+
+        spacing = (row_on_grid + column_on_grid) / 2.0
+        return spacing, ref.calibration_source
 
     @staticmethod
     def _sample_frames(frames: list[_FrameRef], max_frames: int) -> list[_FrameRef]:
@@ -384,12 +572,13 @@ class StenozResearchPlugin:
             else:
                 groups.append([candidate])
 
-        result = []
+        result: list[_CandidateGroup] = []
         for group in groups:
             winner = max(group, key=lambda c: c.confidence)
             result.append(
                 _CandidateGroup(
                     winner=winner,
+                    members=tuple(group),
                     support_count=len(group),
                     first_frame=group[0].frame,
                     last_frame=group[-1].frame,
