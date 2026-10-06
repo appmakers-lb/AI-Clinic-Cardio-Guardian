@@ -60,6 +60,44 @@ def _local_tangent(points: np.ndarray, y: float, x: float) -> np.ndarray | None:
     return tangent / norm
 
 
+def _cross_section_width(
+    mask: np.ndarray,
+    center_y: float,
+    center_x: float,
+    tangent_y: float,
+    tangent_x: float,
+    *,
+    max_half_width_px: int = 30,
+) -> float:
+    ny, nx = -tangent_x, tangent_y
+    offsets = np.arange(-max_half_width_px, max_half_width_px + 1, dtype=float)
+    ys = np.rint(center_y + ny * offsets).astype(int)
+    xs = np.rint(center_x + nx * offsets).astype(int)
+
+    valid = (
+        (ys >= 0)
+        & (xs >= 0)
+        & (ys < mask.shape[0])
+        & (xs < mask.shape[1])
+    )
+    values = np.zeros(offsets.shape, dtype=bool)
+    values[valid] = mask[ys[valid], xs[valid]]
+
+    center_index = max_half_width_px
+    if not values[center_index]:
+        return 0.0
+
+    left = center_index
+    while left > 0 and values[left - 1]:
+        left -= 1
+
+    right = center_index
+    while right < values.size - 1 and values[right + 1]:
+        right += 1
+
+    return float(right - left + 1)
+
+
 def detect_total_occlusion_candidates(
     vessel_mask: np.ndarray,
     vessel_probability: np.ndarray,
@@ -162,13 +200,41 @@ def detect_total_occlusion_candidates(
         if proximal_diameter < minimum_proximal_diameter_px:
             continue
 
-        cap_width = 2.0 * float(distance[ey, ex])
+        # Locate the actual forward edge of the segmented vessel. A skeleton
+        # endpoint lies inside a thick blunt vessel, so distance-transform radius
+        # at the endpoint alone cannot distinguish an abrupt cap from tapering.
+        forward_inside_steps: list[float] = []
+        for step in np.linspace(0.0, 24.0, 49):
+            yy = int(round(ey + ty * step))
+            xx = int(round(ex + tx * step))
+            if 0 <= yy < h and 0 <= xx < w and mask[yy, xx]:
+                forward_inside_steps.append(float(step))
+            elif forward_inside_steps:
+                break
+
+        if not forward_inside_steps:
+            continue
+
+        cap_step = max(forward_inside_steps)
+        near_cap_step = max(0.0, cap_step - 1.5)
+        near_cap_width = _cross_section_width(
+            mask,
+            ey + ty * near_cap_step,
+            ex + tx * near_cap_step,
+            ty,
+            tx,
+        )
+        if near_cap_width <= 0:
+            continue
+
+        # A blunt/abrupt end retains most of its upstream caliber until the
+        # termination; a normal distal taper becomes progressively thinner.
         abruptness = float(np.clip(
-            (proximal_diameter - cap_width) / max(proximal_diameter, 1e-6),
+            near_cap_width / max(proximal_diameter, 1e-6),
             0.0,
             1.0,
         ))
-        if abruptness < 0.35:
+        if abruptness < 0.60:
             continue
 
         # Look forward in a narrow cone. A true supported abrupt cutoff should
