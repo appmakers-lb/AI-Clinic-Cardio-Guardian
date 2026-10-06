@@ -148,11 +148,14 @@ public partial class MainWindow : Window
             var skipped = results.Count(x => x.Status != FindingAddStatus.Added);
             ModelStatusText.Text = $"Local AI: {package.ModelId} {package.ModelVersion}";
             StatusText.Text =
-                $"Research AI: {findings.Count} QCA-qualified finding(s), {addedFindings.Length} added, {skipped} duplicate/invalid; " +
+                $"Research AI: {findings.Count} research finding(s), {addedFindings.Length} added, {skipped} duplicate/invalid; " +
                 $"coverage {coverage.Applied} applied, {coverage.Rejected} rejected.";
 
             RefreshFindings();
             RefreshCoverage();
+
+            if (findings.Count > 0)
+                AutoShowBestFinding(addedFindings.Length > 0 ? addedFindings : findings);
 
             if (findings.Count == 0)
             {
@@ -246,13 +249,20 @@ public partial class MainWindow : Window
 
             var findings = _structuredFindingService.ToGuardianFindings(package);
             var results = _wholeCaseMemory.AddPackage(_case, findings);
-            var added = results.Count(x => x.Status == FindingAddStatus.Added);
+            var addedFindings = results
+                .Where(x => x.Status == FindingAddStatus.Added)
+                .Select(x => x.Finding)
+                .ToArray();
+            var added = addedFindings.Length;
             var skipped = results.Count(x => x.Status != FindingAddStatus.Added);
 
             var coverage = _coverageEngine.ApplyStructuredCoverage(_case, package);
 
             RefreshFindings();
             RefreshCoverage();
+
+            if (findings.Count > 0)
+                AutoShowBestFinding(addedFindings.Length > 0 ? addedFindings : findings);
 
             var multiView = findings.Count(x => x.MultiViewConfirmed);
             StatusText.Text =
@@ -938,14 +948,14 @@ public partial class MainWindow : Window
 
         var compensation = _findingFocusMode ? 1.0 / FindingFocusScale : 1.0;
         var radius = Math.Max(8, baseRadius * compensation);
-        var strokeWidth = Math.Max(1.2, 4 * compensation);
-        var crossWidth = Math.Max(1.0, 2 * compensation);
+        var strokeWidth = Math.Max(1.8, 5 * compensation);
+        var crossWidth = Math.Max(1.4, 3 * compensation);
 
         var ring = new Ellipse
         {
             Width = radius * 2,
             Height = radius * 2,
-            Stroke = Brushes.OrangeRed,
+            Stroke = Brushes.Red,
             StrokeThickness = strokeWidth,
             Fill = Brushes.Transparent
         };
@@ -960,7 +970,7 @@ public partial class MainWindow : Window
             X2 = centerX + radius * 0.55,
             Y1 = centerY,
             Y2 = centerY,
-            Stroke = Brushes.OrangeRed,
+            Stroke = Brushes.Red,
             StrokeThickness = crossWidth
         };
         var vertical = new Line
@@ -969,7 +979,7 @@ public partial class MainWindow : Window
             X2 = centerX,
             Y1 = centerY - radius * 0.55,
             Y2 = centerY + radius * 0.55,
-            Stroke = Brushes.OrangeRed,
+            Stroke = Brushes.Red,
             StrokeThickness = crossWidth
         };
         OverlayCanvas.Children.Add(horizontal);
@@ -988,14 +998,21 @@ public partial class MainWindow : Window
                 ? (_findingFocusMode
                     ? $"FOCUS • QCA ~{estimate:0}% • Esc to exit"
                     : $"RESEARCH QCA • ~{estimate:0}% diameter stenosis")
-                : (_findingFocusMode
-                    ? $"FOCUS • candidate score {_selectedFinding.Confidence:0.00} • Esc to exit"
-                    : $"RESEARCH AI CANDIDATE • score {_selectedFinding.Confidence:0.00}");
+                : string.Equals(
+                        _selectedFinding.FindingType,
+                        "ResearchStenosisCandidate",
+                        StringComparison.OrdinalIgnoreCase)
+                    ? (_findingFocusMode
+                        ? $"FOCUS • REVIEW REGION • score {_selectedFinding.Confidence:0.00} • Esc to exit"
+                        : $"REVIEW REGION • score {_selectedFinding.Confidence:0.00} • QCA withheld")
+                    : (_findingFocusMode
+                        ? $"FOCUS • candidate score {_selectedFinding.Confidence:0.00} • Esc to exit"
+                        : $"RESEARCH AI CANDIDATE • score {_selectedFinding.Confidence:0.00}");
 
         var label = new Border
         {
             Background = new SolidColorBrush(Color.FromArgb(220, 15, 23, 42)),
-            BorderBrush = Brushes.OrangeRed,
+            BorderBrush = Brushes.Red,
             BorderThickness = new Thickness(Math.Max(0.5, compensation)),
             CornerRadius = new CornerRadius(Math.Max(1.5, 4 * compensation)),
             Padding = new Thickness(6 * compensation, 3 * compensation, 6 * compensation, 3 * compensation),
@@ -1583,6 +1600,47 @@ public partial class MainWindow : Window
         }
 
         CoverageSummaryText.Text = _guardian.CoverageSummary(_case);
+    }
+
+    private void AutoShowBestFinding(IEnumerable<GuardianFinding> candidates)
+    {
+        var best = candidates
+            .OrderByDescending(x => string.Equals(
+                x.FindingType,
+                "SuspectedTotalOcclusion",
+                StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(x => x.Priority)
+            .ThenByDescending(x => x.EstimatedDiameterStenosisPercent ?? -1)
+            .ThenByDescending(x => x.FrameQualityScore ?? 0)
+            .ThenByDescending(x => x.Confidence)
+            .FirstOrDefault();
+
+        if (best is null)
+            return;
+
+        var item = FindingList.Items
+            .OfType<ListBoxItem>()
+            .FirstOrDefault(x =>
+                x.Tag is GuardianFinding finding &&
+                string.Equals(finding.Id, best.Id, StringComparison.OrdinalIgnoreCase));
+
+        if (item is null)
+            return;
+
+        FindingList.SelectedItem = item;
+        FindingList.ScrollIntoView(item);
+        _selectedFinding = item.Tag as GuardianFinding;
+
+        if (_selectedFinding is null)
+            return;
+
+        NavigateToFirstEvidence(_selectedFinding);
+        DrawSelectedFindingOverlay();
+
+        StatusText.Text =
+            _selectedFinding.EstimatedDiameterStenosisPercent is double estimate
+                ? $"AI highlighted the strongest measured region — research QCA ~{estimate:0}%."
+                : "AI highlighted the strongest persistent review region. QCA percentage was withheld by quality gates.";
     }
 
     private void RefreshFindings()
