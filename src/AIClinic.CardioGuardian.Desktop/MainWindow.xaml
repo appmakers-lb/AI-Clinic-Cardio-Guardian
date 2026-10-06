@@ -10,7 +10,16 @@
         SnapsToDevicePixels="True"
         Closing="Window_Closing"
         PreviewKeyDown="Window_PreviewKeyDown">
-    <DockPanel LastChildFill="True">
+    <!-- Fit the entire workstation UI inside the actual client area.
+         A fixed logical design surface is uniformly scaled by WPF, so Windows
+         DPI scaling or a shorter monitor can no longer push the right/bottom
+         panes outside the visible window. -->
+    <Grid ClipToBounds="True">
+        <Viewbox Stretch="Uniform"
+                 StretchDirection="Both"
+                 HorizontalAlignment="Stretch"
+                 VerticalAlignment="Stretch">
+            <DockPanel Width="1280" Height="670" LastChildFill="True">
         <!-- Research-mode banner -->
         <Border DockPanel.Dock="Top" Background="{StaticResource Danger}" Padding="8">
             <Grid>
@@ -98,11 +107,11 @@
              measures star columns at infinite width and pushes the right pane off-screen. -->
         <Grid Margin="4" ClipToBounds="True">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="160" MinWidth="145" MaxWidth="210"/>
+                <ColumnDefinition Width="165"/>
                 <ColumnDefinition Width="5"/>
-                <ColumnDefinition Width="*" MinWidth="260"/>
+                <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="5"/>
-                <ColumnDefinition Width="270" MinWidth="250" MaxWidth="310"/>
+                <ColumnDefinition Width="275"/>
             </Grid.ColumnDefinitions>
 
             <!-- LEFT: DICOM navigation. Vertical scrolling only; no horizontal clipping. -->
@@ -358,5 +367,7 @@
                 </TabControl>
             </Border>
         </Grid>
-    </DockPanel>
+            </DockPanel>
+        </Viewbox>
+    </Grid>
 </Window>
