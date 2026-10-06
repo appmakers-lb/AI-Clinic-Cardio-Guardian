@@ -49,4 +49,12 @@ jobs:
           python -m py_compile ai-research/stenoz_unet.py
           python -m py_compile ai-research/stenoz_research_plugin.py
           python -m py_compile ai-research/stenoz_geometry.py
+          python -m py_compile ai-research/qca_research.py
+          python -m py_compile ai-research/test_qca_research.py
           python -m py_compile ai-research/setup_stenoz_research_model.py
+
+      - name: Install QCA geometry test dependencies
+        run: python -m pip install --disable-pip-version-check numpy scipy scikit-image
+
+      - name: Run research QCA synthetic checks
+        run: python ai-research/test_qca_research.py
