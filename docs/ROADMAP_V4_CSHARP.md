@@ -34,14 +34,24 @@ Owner: A04 + A12
 - LM/LAD/LCx/RCA labeling where supported
 - best-frame assistance
 
-## V1.3 — Lesion/QCA Research
-Owner: A05 + A12
-- suspected lesion localization
-- reference/minimum diameter
-- lesion length
-- stenosis estimate
-- physician correction
-- evidence-linked structured output
+## V1.3 — Lesion/QCA Research — ACTIVE
+Owner: A04 + A05 + A06 + A07 + A08 + A10 + A11 + A12
+- direct stenosis localization + separate vessel segmentation
+- multiple lesion candidates per sampled cine frame
+- spatiotemporal lesion tracking across sampled frames
+- bilateral reference-vessel geometry
+- reference diameter + minimum lumen diameter + lesion length
+- percent diameter stenosis using QCA formula
+- multi-frame median estimate + variability gate
+- Moderate/High measurement-quality gate required before a percentage is accepted
+- optional DICOM image-plane physical measurements when usable spacing metadata exists
+- abstain instead of reporting a number when vessel geometry or repeatability is inadequate
+- evidence-linked overlay / SHOW WHY / double-click focus zoom
+- voice alert can state percentage, quality and number of measured frames
+- synthetic QCA regression checks in CI
+- complete occlusion remains a separate detector; never infer 100% from ordinary QCA
+- automatic LAD/LCx/RCA/segment identity remains a separate model workstream
+- physician correction remains pending
 
 ## V1.4 — Multi-View Memory
 Owner: A06
