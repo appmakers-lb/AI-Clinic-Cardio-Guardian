@@ -241,6 +241,108 @@
               "string",
               "null"
             ]
+          },
+          "borderConfidence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "longitudinalPosition": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "projectedReferenceSpanPixels": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "frameQualityScore": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "frameOverlapRisk": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "injectionSide": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lesionGroupId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "multiViewConfirmed": {
+            "type": "boolean"
+          },
+          "projectionCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "sourceSeriesCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "crossViewVariabilityPercent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "occlusionPercent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "totalOcclusionScore": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "totalOcclusionFrameCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "chronicityEstablished": {
+            "type": "boolean"
           }
         }
       }
