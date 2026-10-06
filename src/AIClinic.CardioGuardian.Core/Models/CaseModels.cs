@@ -443,6 +443,7 @@ public sealed class StructuredFindingPackage
     public string ModelVersion { get; init; } = string.Empty;
     public string? CaseId { get; init; }
     public string? GeneratedAtUtc { get; init; }
+    public string? AnalysisNote { get; init; }
     public IReadOnlyList<StructuredFindingItem> Findings { get; init; } = Array.Empty<StructuredFindingItem>();
     public IReadOnlyList<StructuredCoverageItem> Coverage { get; init; } = Array.Empty<StructuredCoverageItem>();
 }
