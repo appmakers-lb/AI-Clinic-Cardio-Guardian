@@ -147,12 +147,22 @@ class StenozResearchPlugin:
         min_qca_frames = max(2, int(os.getenv("CARDIO_QCA_MIN_FRAMES", "2")))
         max_qca_variability = float(os.getenv("CARDIO_QCA_MAX_VARIABILITY_PERCENT", "18"))
 
+        max_candidates_per_frame = max(
+            1, int(os.getenv("CARDIO_STENOZ_MAX_CANDIDATES_PER_FRAME", "4"))
+        )
+
         candidates: list[_Candidate] = []
         for ref in sample_refs:
             image = self._read_frame(ref)
-            candidate = self._detect_frame(image, ref.global_index, threshold, min_area)
-            if candidate is not None:
-                candidates.append(candidate)
+            candidates.extend(
+                self._detect_frame_candidates(
+                    image,
+                    ref.global_index,
+                    threshold,
+                    min_area,
+                    max_candidates_per_frame,
+                )
+            )
 
         grouped = self._group_candidates(candidates, sample_refs)
         grouped = [g for g in grouped if g.support_count >= min_support]
@@ -357,10 +367,21 @@ class StenozResearchPlugin:
                 }
             )
 
+        max_reported_findings = max(
+            1, int(os.getenv("CARDIO_MAX_REPORTED_FINDINGS", "8"))
+        )
+        findings.sort(
+            key=lambda finding: (
+                float(finding.get("estimatedDiameterStenosisPercent") or 0),
+                float(finding.get("confidence") or 0),
+            ),
+            reverse=True,
+        )
+
         return {
             "modelId": self.model_id,
             "modelVersion": self.model_version,
-            "findings": findings[:3],
+            "findings": findings[:max_reported_findings],
             "coverage": [],
             "analysisNote": (
                 f"Sampled {len(sample_refs)} of {len(frame_refs)} frame(s). "
@@ -486,20 +507,21 @@ class StenozResearchPlugin:
             align_corners=False,
         )
 
-    def _detect_frame(
+    def _detect_frame_candidates(
         self,
         image: np.ndarray,
         frame_index: int,
         threshold: float,
         min_area: int,
-    ) -> _Candidate | None:
+        max_candidates: int,
+    ) -> list[_Candidate]:
         torch = self._torch
         ndi = self._ndi
         assert torch is not None and ndi is not None and self._stenosis_model is not None
 
         tensor = self._prepare_tensor(image)
         if tensor is None:
-            return None
+            return []
 
         with torch.no_grad():
             prob = torch.sigmoid(self._stenosis_model(tensor))[0, 0].cpu().numpy()
@@ -507,23 +529,34 @@ class StenozResearchPlugin:
         mask = prob > threshold
         labels, count = ndi.label(mask)
 
-        best: _Candidate | None = None
+        candidates: list[_Candidate] = []
         for label_id in range(1, int(count) + 1):
             ys, xs = np.where(labels == label_id)
             if len(xs) < min_area:
                 continue
 
-            confidence = float(prob[ys, xs].max())
-            candidate = _Candidate(
-                frame=frame_index,
-                confidence=confidence,
-                x=float(xs.mean()),
-                y=float(ys.mean()),
-                area=int(len(xs)),
+            component_prob = prob[ys, xs]
+            confidence = float(component_prob.max())
+            weight_sum = float(component_prob.sum())
+            if weight_sum > 1e-9:
+                x = float((xs * component_prob).sum() / weight_sum)
+                y = float((ys * component_prob).sum() / weight_sum)
+            else:
+                x = float(xs.mean())
+                y = float(ys.mean())
+
+            candidates.append(
+                _Candidate(
+                    frame=frame_index,
+                    confidence=confidence,
+                    x=x,
+                    y=y,
+                    area=int(len(xs)),
+                )
             )
-            if best is None or candidate.confidence > best.confidence:
-                best = candidate
-        return best
+
+        candidates.sort(key=lambda item: (item.confidence, item.area), reverse=True)
+        return candidates[:max_candidates]
 
     def _segment_vessels(self, image: np.ndarray) -> np.ndarray:
         torch = self._torch
@@ -560,28 +593,46 @@ class StenozResearchPlugin:
         merge_gap = max(2, typical_gap * 2)
         max_spatial_shift = 96.0
 
-        ordered = sorted(candidates, key=lambda c: c.frame)
-        groups: list[list[_Candidate]] = [[ordered[0]]]
+        # Greedy spatiotemporal tracking. Multiple lesion candidates can coexist
+        # in the same frame; a track may contain at most one candidate per frame.
+        tracks: list[list[_Candidate]] = []
+        for candidate in sorted(candidates, key=lambda item: (item.frame, -item.confidence)):
+            best_track: list[_Candidate] | None = None
+            best_distance = float("inf")
 
-        for candidate in ordered[1:]:
-            previous = groups[-1][-1]
-            frame_close = candidate.frame - previous.frame <= merge_gap
-            spatial_close = math.hypot(candidate.x - previous.x, candidate.y - previous.y) <= max_spatial_shift
-            if frame_close and spatial_close:
-                groups[-1].append(candidate)
+            for track in tracks:
+                last = track[-1]
+                if candidate.frame <= last.frame:
+                    continue
+                if candidate.frame - last.frame > merge_gap:
+                    continue
+
+                distance = math.hypot(candidate.x - last.x, candidate.y - last.y)
+                if distance <= max_spatial_shift and distance < best_distance:
+                    best_track = track
+                    best_distance = distance
+
+            if best_track is None:
+                tracks.append([candidate])
             else:
-                groups.append([candidate])
+                best_track.append(candidate)
 
         result: list[_CandidateGroup] = []
-        for group in groups:
-            winner = max(group, key=lambda c: c.confidence)
+        for track in tracks:
+            winner = max(track, key=lambda item: item.confidence)
             result.append(
                 _CandidateGroup(
                     winner=winner,
-                    members=tuple(group),
-                    support_count=len(group),
-                    first_frame=group[0].frame,
-                    last_frame=group[-1].frame,
+                    members=tuple(track),
+                    support_count=len(track),
+                    first_frame=track[0].frame,
+                    last_frame=track[-1].frame,
                 )
             )
-        return sorted(result, key=lambda g: (g.support_count, g.winner.confidence), reverse=True)
+
+        return sorted(
+            result,
+            key=lambda group: (group.support_count, group.winner.confidence),
+            reverse=True,
+        )
+
