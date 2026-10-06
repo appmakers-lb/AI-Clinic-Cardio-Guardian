@@ -145,6 +145,17 @@ var package = service.Parse("""
       "measurementQualityScore": 0.91,
       "measurementFrameCount": 4,
       "measurementVariabilityPercent": 6.0,
+      "borderConfidence": 0.84,
+      "longitudinalPosition": 0.42,
+      "projectedReferenceSpanPixels": 110,
+      "frameQualityScore": 0.88,
+      "frameOverlapRisk": 0.10,
+      "injectionSide": "LEFT",
+      "lesionGroupId": "lesion-test",
+      "multiViewConfirmed": true,
+      "projectionCount": 2,
+      "sourceSeriesCount": 2,
+      "crossViewVariabilityPercent": 4,
       "explanation": "Synthetic unit-test payload",
       "evidence": [
         { "sourceId": "SER-1", "frameStart": 1, "frameEnd": 5, "projection": "LAO", "description": "test" }
@@ -165,6 +176,12 @@ Assert(converted[0].ReferenceDiameterPixels == 20.0 &&
        converted[0].MeasurementQuality == "High" &&
        converted[0].MeasurementFrameCount == 4,
        "structured QCA geometry and quality metadata preserved");
+Assert(converted[0].MultiViewConfirmed &&
+       converted[0].ProjectionCount == 2 &&
+       converted[0].SourceSeriesCount == 2 &&
+       converted[0].LesionGroupId == "lesion-test" &&
+       converted[0].FrameQualityScore == 0.88,
+       "structured multi-view and frame-quality metadata preserved");
 
 var noModelBlocked = false;
 try
@@ -366,6 +383,68 @@ try
 }
 catch (InvalidOperationException) { invalidEstimateBlocked = true; }
 Assert(invalidEstimateBlocked, "out-of-range research narrowing estimate blocked");
+
+var totalOcclusionPackage = service.Parse("""
+{
+  "modelId":"occlusion-research",
+  "modelVersion":"1.4",
+  "findings":[{
+    "id":"OCC-1",
+    "vessel":"Unspecified coronary vessel",
+    "segment":"image-level review",
+    "findingType":"SuspectedTotalOcclusion",
+    "confidence":0.84,
+    "priority":"HighPriorityReview",
+    "occlusionPercent":100,
+    "totalOcclusionScore":0.84,
+    "totalOcclusionFrameCount":4,
+    "chronicityEstablished":false,
+    "measurementQuality":"High",
+    "measurementQualityScore":0.86,
+    "measurementFrameCount":4,
+    "evidence":[
+      {"sourceId":"SER-1","frameStart":10,"frameEnd":10,"description":"abrupt cutoff"},
+      {"sourceId":"SER-1","frameStart":12,"frameEnd":12,"description":"persistent cutoff"},
+      {"sourceId":"SER-1","frameStart":14,"frameEnd":14,"description":"persistent cutoff"}
+    ]
+  }]
+}
+""");
+var totalOcclusion = service.ToGuardianFindings(totalOcclusionPackage);
+Assert(totalOcclusion.Count == 1 &&
+       totalOcclusion[0].OcclusionPercent == 100 &&
+       totalOcclusion[0].TotalOcclusionScore == 0.84 &&
+       !totalOcclusion[0].ChronicityEstablished,
+       "independent total-occlusion contract preserved without claiming CTO chronicity");
+
+var weakOcclusionBlocked = false;
+try
+{
+    var weak = service.Parse("""
+    {
+      "modelId":"occlusion-research",
+      "modelVersion":"1.4",
+      "findings":[{
+        "id":"OCC-WEAK",
+        "vessel":"Unspecified coronary vessel",
+        "segment":"image-level review",
+        "findingType":"SuspectedTotalOcclusion",
+        "confidence":0.6,
+        "priority":"Review",
+        "occlusionPercent":100,
+        "totalOcclusionScore":0.6,
+        "totalOcclusionFrameCount":3,
+        "measurementQuality":"Moderate",
+        "measurementQualityScore":0.7,
+        "measurementFrameCount":3,
+        "evidence":[{"sourceId":"SER-1","frameStart":1,"frameEnd":1,"description":"weak"}]
+      }]
+    }
+    """);
+    service.ToGuardianFindings(weak);
+}
+catch (InvalidDataException) { weakOcclusionBlocked = true; }
+Assert(weakOcclusionBlocked, "weak total-occlusion detector output blocked");
 
 var invalidQcaGeometryBlocked = false;
 try
