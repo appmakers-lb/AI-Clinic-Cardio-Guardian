@@ -100,7 +100,7 @@
                       HorizontalScrollBarVisibility="Auto"
                       PanningMode="Both"
                       Focusable="False">
-        <Grid Margin="6"
+        <Grid Margin="0"
               MinHeight="{Binding ActualHeight, ElementName=WorkspaceScrollViewer}"
               MinWidth="{Binding ActualWidth, ElementName=WorkspaceScrollViewer}">
             <Grid.ColumnDefinitions>
@@ -112,7 +112,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- LEFT: DICOM navigation. Vertical scrolling only; no horizontal clipping. -->
-            <Border Grid.Column="0" Background="{StaticResource Panel}"
+            <Border Grid.Column="0" Margin="4,4,0,4" Background="{StaticResource Panel}"
                     BorderBrush="{StaticResource Border}" BorderThickness="1"
                     CornerRadius="6" Padding="6">
                 <Grid>
@@ -251,7 +251,7 @@
                           Background="#253244" ShowsPreview="True"/>
 
             <!-- RIGHT: tabbed workspace keeps every control visible without a tall stacked sidebar. -->
-            <Border Grid.Column="4" Background="{StaticResource Panel}"
+            <Border Grid.Column="4" Margin="0,4,4,4" Background="{StaticResource Panel}"
                     BorderBrush="{StaticResource Border}" BorderThickness="1"
                     CornerRadius="6" Padding="4" MinHeight="0">
                 <TabControl MinHeight="0">
