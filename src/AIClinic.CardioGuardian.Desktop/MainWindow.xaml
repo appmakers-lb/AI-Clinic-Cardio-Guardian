@@ -93,26 +93,20 @@
             </Grid>
         </Border>
 
-        <!-- Main application area: always fit the usable window; scroll only if
-             Windows DPI scaling or a particularly small display requires it. -->
-        <ScrollViewer x:Name="WorkspaceScrollViewer"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Auto"
-                      PanningMode="Both"
-                      Focusable="False">
-        <Grid Margin="0"
-              MinHeight="{Binding ActualHeight, ElementName=WorkspaceScrollViewer}"
-              MinWidth="{Binding ActualWidth, ElementName=WorkspaceScrollViewer}">
+        <!-- Main application area: keep the whole workspace inside the maximized
+             client area. Do NOT wrap this grid in a ScrollViewer because WPF
+             measures star columns at infinite width and pushes the right pane off-screen. -->
+        <Grid Margin="4" ClipToBounds="True">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="180" MinWidth="150"/>
-                <ColumnDefinition Width="6"/>
-                <ColumnDefinition Width="*" MinWidth="210"/>
-                <ColumnDefinition Width="6"/>
-                <ColumnDefinition Width="290" MinWidth="265"/>
+                <ColumnDefinition Width="160" MinWidth="145" MaxWidth="210"/>
+                <ColumnDefinition Width="5"/>
+                <ColumnDefinition Width="*" MinWidth="260"/>
+                <ColumnDefinition Width="5"/>
+                <ColumnDefinition Width="270" MinWidth="250" MaxWidth="310"/>
             </Grid.ColumnDefinitions>
 
             <!-- LEFT: DICOM navigation. Vertical scrolling only; no horizontal clipping. -->
-            <Border Grid.Column="0" Margin="4,4,0,4" Background="{StaticResource Panel}"
+            <Border Grid.Column="0" Background="{StaticResource Panel}"
                     BorderBrush="{StaticResource Border}" BorderThickness="1"
                     CornerRadius="6" Padding="6">
                 <Grid>
@@ -239,7 +233,7 @@
                 </UniformGrid>
 
                 <Border Grid.Row="3" Background="#111B27" BorderBrush="{StaticResource Border}"
-                        BorderThickness="1" CornerRadius="5" Padding="5" Margin="0,4,0,0">
+                        BorderThickness="1" CornerRadius="5" Padding="4" Margin="0,3,0,0" MaxHeight="42">
                     <TextBlock TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="10">
                         <Run FontWeight="Bold" Foreground="#FDE68A" Text="Research build: "/>
                         <Run Text="v1.4.0 selects higher-quality contrast-filled cine frames, measures sub-pixel lumen borders, uses strict physical-calibration rules, links compatible lesions across projections, and runs a separate total-occlusion detector. Results remain research outputs until externally validated."/>
@@ -251,7 +245,7 @@
                           Background="#253244" ShowsPreview="True"/>
 
             <!-- RIGHT: tabbed workspace keeps every control visible without a tall stacked sidebar. -->
-            <Border Grid.Column="4" Margin="0,4,4,4" Background="{StaticResource Panel}"
+            <Border Grid.Column="4" Background="{StaticResource Panel}"
                     BorderBrush="{StaticResource Border}" BorderThickness="1"
                     CornerRadius="6" Padding="4" MinHeight="0">
                 <TabControl MinHeight="0">
@@ -364,6 +358,5 @@
                 </TabControl>
             </Border>
         </Grid>
-        </ScrollViewer>
     </DockPanel>
 </Window>
