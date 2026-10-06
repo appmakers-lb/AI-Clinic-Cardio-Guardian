@@ -27,9 +27,9 @@
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
         </Style>
         <Style TargetType="Button">
-            <Setter Property="Margin" Value="4"/>
-            <Setter Property="Padding" Value="14,9"/>
-            <Setter Property="MinHeight" Value="38"/>
+            <Setter Property="Margin" Value="3"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="MinHeight" Value="30"/>
             <Setter Property="Background" Value="{StaticResource Panel2}"/>
             <Setter Property="Foreground" Value="{StaticResource Text}"/>
             <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
@@ -75,19 +75,19 @@
             <Setter Property="Background" Value="{StaticResource Accent}"/>
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="BorderBrush" Value="#5B8CFF"/>
-            <Setter Property="FontSize" Value="15"/>
-            <Setter Property="MinHeight" Value="46"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="MinHeight" Value="36"/>
         </Style>
         <Style TargetType="TextBlock"><Setter Property="Foreground" Value="{StaticResource Text}"/></Style>
         <Style TargetType="ListBox"><Setter Property="Background" Value="{StaticResource Panel}"/><Setter Property="Foreground" Value="{StaticResource Text}"/><Setter Property="BorderBrush" Value="{StaticResource Border}"/></Style>
         <Style TargetType="TextBox"><Setter Property="Background" Value="#0E151E"/><Setter Property="Foreground" Value="{StaticResource Text}"/><Setter Property="BorderBrush" Value="{StaticResource Border}"/><Setter Property="CaretBrush" Value="White"/></Style>
-        <Style TargetType="ComboBox"><Setter Property="Background" Value="#E7EEF7"/><Setter Property="Foreground" Value="#111827"/><Setter Property="MinHeight" Value="38"/><Setter Property="Margin" Value="4"/></Style>
+        <Style TargetType="ComboBox"><Setter Property="Background" Value="#E7EEF7"/><Setter Property="Foreground" Value="#111827"/><Setter Property="MinHeight" Value="30"/><Setter Property="Margin" Value="3"/></Style>
         <Style TargetType="CheckBox"><Setter Property="Foreground" Value="{StaticResource Text}"/></Style>
 
         <Style TargetType="TabItem">
-            <Setter Property="Padding" Value="5,5"/>
+            <Setter Property="Padding" Value="4,4"/>
             <Setter Property="Margin" Value="1,0,1,0"/>
-            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontSize" Value="10"/>
             <Setter Property="Foreground" Value="#C9D5E3"/>
             <Setter Property="Background" Value="#172231"/>
             <Setter Property="BorderBrush" Value="#33465C"/>
