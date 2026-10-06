@@ -60,6 +60,8 @@ public sealed class LocalAiGatewayService : IDisposable
             seriesInstanceUid = series.SeriesInstanceUid,
             modality = series.Modality,
             projection = series.Projection,
+            seriesDescription = series.SeriesDescription,
+            protocolName = string.Empty,
             frameCount = series.TotalFrames,
             estimatedFramesPerSecond = series.EstimatedFramesPerSecond,
             filePaths = series.FilePaths
@@ -67,6 +69,51 @@ public sealed class LocalAiGatewayService : IDisposable
 
         using var response = await _http.PostAsJsonAsync(
             "/analyze-series",
+            request,
+            cancellationToken);
+
+        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException(
+                $"Local AI service returned {(int)response.StatusCode}: {json}");
+
+        return _structuredFindingService.Parse(json);
+    }
+
+
+    public async Task<StructuredFindingPackage> AnalyzeCaseAsync(
+        IReadOnlyList<ImagingSeriesInfo> series,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(series);
+
+        var usable = series
+            .Where(item => item.FilePaths.Count > 0)
+            .ToArray();
+
+        if (usable.Length == 0)
+            throw new InvalidOperationException("The case has no local DICOM series with file paths.");
+
+        var request = new
+        {
+            series = usable.Select(item => new
+            {
+                sourceId = item.Id,
+                studyInstanceUid = item.StudyInstanceUid,
+                seriesInstanceUid = item.SeriesInstanceUid,
+                modality = item.Modality,
+                projection = item.Projection,
+                seriesDescription = item.SeriesDescription,
+                protocolName = string.Empty,
+                frameCount = item.TotalFrames,
+                estimatedFramesPerSecond = item.EstimatedFramesPerSecond,
+                filePaths = item.FilePaths
+            }).ToArray()
+        };
+
+        using var response = await _http.PostAsJsonAsync(
+            "/analyze-case",
             request,
             cancellationToken);
 
