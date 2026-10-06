@@ -319,6 +319,12 @@
           }
         }
       }
+    },
+    "analysisNote": {
+      "type": [
+        "string",
+        "null"
+      ]
     }
   }
 }
