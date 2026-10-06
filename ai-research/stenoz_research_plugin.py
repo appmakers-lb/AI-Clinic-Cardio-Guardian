@@ -1,17 +1,19 @@
-"""Coronary XCA research adapter for Cardio Guardian v1.3.
+"""Cardio Guardian coronary XCA research adapter v1.4.
 
-This is a real image-analysis pipeline for retrospective/research work:
-- direct stenosis-candidate localization,
-- coronary vessel segmentation,
-- temporal persistence across cine frames,
-- conservative research QCA measurement with bilateral reference vessel,
-- multi-frame consistency gates,
-- evidence-linked output.
+Pipeline:
+- sample cine frames;
+- segment coronary vessels first;
+- score frame quality (contrast, border sharpness, saturation, vessel fill,
+  likely overlap and temporal stability);
+- run stenosis localization only on usable frames;
+- track multiple candidates across time;
+- measure sub-pixel lumen borders perpendicular to centerline;
+- calculate reference diameter, MLD, lesion length and percent diameter
+  stenosis with strict multi-frame repeatability gates;
+- run a separate abrupt-cutoff total-occlusion detector;
+- preserve evidence and metadata needed for cross-projection lesion linking.
 
-It is NOT clinically validated, certified QCA, or a diagnostic device.
-If the geometry/quality gates fail, the adapter abstains instead of reporting
-a percentage. A negative result is never clinical clearance. A 100% total
-occlusion is never inferred from ordinary diameter-stenosis measurement.
+This is research software. It is not clinically validated or certified.
 """
 from __future__ import annotations
 
@@ -24,13 +26,17 @@ from typing import Any, Iterable
 
 import numpy as np
 
+from frame_quality import FrameQuality, score_frame, select_best_frames
+from multiview_linker import infer_injection_side
+from qca_calibration import CalibrationResult, calibration_from_dicom, calibration_on_model_grid
 from qca_research import ResearchQcaMeasurement, measure_qca
+from total_occlusion_research import TotalOcclusionCandidate, detect_total_occlusion_candidates
 
 ROOT = Path(__file__).resolve().parent
 STENOSIS_MODEL_PATH = ROOT / "models" / "unet_stenosis.pt"
 VESSEL_MODEL_PATH = ROOT / "models" / "unet_vessel.pt"
 MODEL_ID = "CARDIO_GUARDIAN_XCA_QCA_RESEARCH"
-MODEL_VERSION = "2026-demo-3"
+MODEL_VERSION = "2026-demo-4"
 INPUT_SIZE = 512
 
 
@@ -42,9 +48,19 @@ class _FrameRef:
     photometric: str
     rows: int
     columns: int
-    pixel_spacing_row_mm: float | None
-    pixel_spacing_column_mm: float | None
-    calibration_source: str | None
+    calibration: CalibrationResult | None
+    metadata_text: str
+    primary_angle: float | None
+    secondary_angle: float | None
+
+
+@dataclass(frozen=True)
+class _FrameData:
+    ref: _FrameRef
+    image: np.ndarray
+    vessel_probability: np.ndarray
+    vessel_mask: np.ndarray
+    quality: FrameQuality
 
 
 @dataclass(frozen=True)
@@ -69,6 +85,14 @@ class _CandidateGroup:
 class _MeasuredCandidate:
     candidate: _Candidate
     measurement: ResearchQcaMeasurement
+    frame_quality: FrameQuality
+
+
+@dataclass(frozen=True)
+class _OcclusionFrameCandidate:
+    frame: int
+    candidate: TotalOcclusionCandidate
+    frame_quality: FrameQuality
 
 
 class StenozResearchPlugin:
@@ -127,6 +151,8 @@ class StenozResearchPlugin:
         projection = str(request.get("projection", "")).strip() or None
         modality = str(request.get("modality", "")).strip().upper()
         file_paths = [Path(p) for p in request.get("filePaths", [])]
+        explicit_calibration = request.get("catheterCalibrationMmPerPixel")
+        explicit_calibration_source = request.get("catheterCalibrationSource")
 
         if not source_id or not file_paths:
             raise ValueError("sourceId and filePaths are required.")
@@ -135,148 +161,277 @@ class StenozResearchPlugin:
                 f"Research adapter supports X-ray angiography only; received modality '{modality}'."
             )
 
-        frame_refs = list(self._index_frames(file_paths))
+        frame_refs = list(
+            self._index_frames(
+                file_paths,
+                explicit_calibration=explicit_calibration,
+                explicit_calibration_source=explicit_calibration_source,
+            )
+        )
         if not frame_refs:
             raise ValueError("No decodable DICOM frames were found.")
 
-        max_frames = max(8, int(os.getenv("CARDIO_MAX_AI_FRAMES", "96")))
+        max_frames = max(12, int(os.getenv("CARDIO_MAX_AI_FRAMES", "96")))
         sample_refs = self._sample_frames(frame_refs, max_frames)
         threshold = float(os.getenv("CARDIO_STENOZ_THRESHOLD", "0.70"))
         min_area = max(20, int(os.getenv("CARDIO_STENOZ_MIN_AREA", "40")))
         min_support = max(2, int(os.getenv("CARDIO_STENOZ_MIN_SUPPORT", "2")))
         min_qca_frames = max(2, int(os.getenv("CARDIO_QCA_MIN_FRAMES", "2")))
         max_qca_variability = float(os.getenv("CARDIO_QCA_MAX_VARIABILITY_PERCENT", "18"))
-
         max_candidates_per_frame = max(
             1, int(os.getenv("CARDIO_STENOZ_MAX_CANDIDATES_PER_FRAME", "4"))
         )
+        max_quality_frames = max(
+            8, int(os.getenv("CARDIO_MAX_QUALITY_SELECTED_FRAMES", "64"))
+        )
 
-        candidates: list[_Candidate] = []
+        raw_cache: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
         for ref in sample_refs:
             image = self._read_frame(ref)
-            candidates.extend(
-                self._detect_frame_candidates(
-                    image,
-                    ref.global_index,
-                    threshold,
-                    min_area,
-                    max_candidates_per_frame,
-                )
+            vessel_probability, vessel_mask = self._segment_vessels(image)
+            raw_cache[ref.global_index] = (image, vessel_probability, vessel_mask)
+
+        qualities: dict[int, FrameQuality] = {}
+        for index, ref in enumerate(sample_refs):
+            image, vessel_probability, vessel_mask = raw_cache[ref.global_index]
+            previous_mask = (
+                raw_cache[sample_refs[index - 1].global_index][2]
+                if index > 0
+                else None
+            )
+            next_mask = (
+                raw_cache[sample_refs[index + 1].global_index][2]
+                if index + 1 < len(sample_refs)
+                else None
+            )
+            qualities[ref.global_index] = score_frame(
+                image,
+                vessel_probability,
+                vessel_mask,
+                previous_vessel_mask=previous_mask,
+                next_vessel_mask=next_mask,
             )
 
-        grouped = self._group_candidates(candidates, sample_refs)
+        usable_indices = select_best_frames(
+            [ref.global_index for ref in sample_refs],
+            qualities,
+            maximum=min(max_quality_frames, len(sample_refs)),
+            minimum_spacing_frames=1,
+        )
+        usable_set = set(usable_indices)
+        selected_refs = [ref for ref in sample_refs if ref.global_index in usable_set]
+
+        if len(selected_refs) < min_support:
+            return {
+                "modelId": self.model_id,
+                "modelVersion": self.model_version,
+                "findings": [],
+                "coverage": [],
+                "analysisNote": (
+                    f"Frame-quality gate retained only {len(selected_refs)} of "
+                    f"{len(sample_refs)} sampled frame(s). Contrast/overlap/sharpness "
+                    "quality was insufficient for a reliable research measurement."
+                ),
+            }
+
+        frame_data: dict[int, _FrameData] = {
+            ref.global_index: _FrameData(
+                ref=ref,
+                image=raw_cache[ref.global_index][0],
+                vessel_probability=raw_cache[ref.global_index][1],
+                vessel_mask=raw_cache[ref.global_index][2],
+                quality=qualities[ref.global_index],
+            )
+            for ref in selected_refs
+        }
+
+        candidates: list[_Candidate] = []
+        candidates_by_frame: dict[int, list[_Candidate]] = {}
+        for ref in selected_refs:
+            image = frame_data[ref.global_index].image
+            frame_candidates = self._detect_frame_candidates(
+                image,
+                ref.global_index,
+                threshold,
+                min_area,
+                max_candidates_per_frame,
+            )
+            candidates_by_frame[ref.global_index] = frame_candidates
+            candidates.extend(frame_candidates)
+
+        grouped = self._group_candidates(candidates, selected_refs)
         grouped = [g for g in grouped if g.support_count >= min_support]
-        frame_by_index = {ref.global_index: ref for ref in frame_refs}
+
+        metadata_text = " ".join(
+            [
+                str(request.get("projection", "") or ""),
+                str(request.get("seriesDescription", "") or ""),
+                str(request.get("protocolName", "") or ""),
+            ]
+            + [ref.metadata_text for ref in selected_refs[:3]]
+        )
+        injection_side = infer_injection_side(metadata_text)
 
         findings: list[dict[str, Any]] = []
         rejected_temporal_or_qca = 0
 
-        for rank, group in enumerate(grouped[:8], start=1):
+        for rank, group in enumerate(grouped[:10], start=1):
             measured: list[_MeasuredCandidate] = []
 
-            # Measure several independent frames. A single frame is not enough
-            # to publish a stenosis percentage.
-            members = sorted(group.members, key=lambda c: c.confidence, reverse=True)[:6]
+            members = sorted(
+                group.members,
+                key=lambda candidate: (
+                    frame_data[candidate.frame].quality.total_score,
+                    candidate.confidence,
+                ),
+                reverse=True,
+            )[:8]
+
             for candidate in members:
-                frame_ref = frame_by_index.get(candidate.frame)
-                if frame_ref is None:
+                data = frame_data.get(candidate.frame)
+                if data is None:
                     continue
 
-                image = self._read_frame(frame_ref)
-                vessel_mask = self._segment_vessels(image)
-                spacing_mm, calibration_source = self._model_grid_spacing(frame_ref)
+                grid_calibration = calibration_on_model_grid(
+                    data.ref.calibration,
+                    original_rows=data.ref.rows,
+                    original_columns=data.ref.columns,
+                    model_rows=INPUT_SIZE,
+                    model_columns=INPUT_SIZE,
+                )
+                spacing_mm = None
+                calibration_source = None
+                if (
+                    grid_calibration is not None
+                    and grid_calibration.reliable_for_physical_measurement
+                ):
+                    spacing_mm = (
+                        grid_calibration.row_mm_per_pixel
+                        + grid_calibration.column_mm_per_pixel
+                    ) / 2.0
+                    calibration_source = grid_calibration.source
 
                 measurement = measure_qca(
-                    vessel_mask,
+                    data.vessel_mask,
                     candidate_x=candidate.x,
                     candidate_y=candidate.y,
+                    vessel_probability=data.vessel_probability,
                     pixel_spacing_mm=spacing_mm,
                     calibration_source=calibration_source,
                 )
                 if measurement is not None:
-                    measured.append(_MeasuredCandidate(candidate, measurement))
+                    measured.append(
+                        _MeasuredCandidate(
+                            candidate=candidate,
+                            measurement=measurement,
+                            frame_quality=data.quality,
+                        )
+                    )
 
             if len(measured) < min_qca_frames:
                 rejected_temporal_or_qca += 1
                 continue
 
             percents = np.asarray(
-                [m.measurement.diameter_stenosis_percent for m in measured],
+                [item.measurement.diameter_stenosis_percent for item in measured],
                 dtype=float,
             )
             median_percent = float(np.median(percents))
             variability = float(np.max(percents) - np.min(percents))
             mad = float(np.median(np.abs(percents - median_percent)))
-
-            # Strong abstention gate: a lesion percentage is not reported when
-            # the same candidate is unstable across the sampled cine frames.
             if variability > max_qca_variability:
                 rejected_temporal_or_qca += 1
                 continue
 
-            quality_scores = np.asarray(
-                [m.measurement.quality_score for m in measured],
-                dtype=float,
-            )
-            aggregate_quality = float(np.median(quality_scores))
-            if aggregate_quality < 0.65:
+            geometry_quality = float(np.median(
+                [item.measurement.quality_score for item in measured]
+            ))
+            frame_quality = float(np.median(
+                [item.frame_quality.total_score for item in measured]
+            ))
+            aggregate_quality = 0.76 * geometry_quality + 0.24 * frame_quality
+            if aggregate_quality < 0.68:
                 rejected_temporal_or_qca += 1
                 continue
 
-            if aggregate_quality >= 0.80 and variability <= 8 and len(measured) >= 3:
-                quality_label = "High"
-            else:
-                quality_label = "Moderate"
+            quality_label = (
+                "High"
+                if aggregate_quality >= 0.82 and variability <= 8 and len(measured) >= 3
+                else "Moderate"
+            )
 
-            uncertainty = max(8.0, 2.0 * 1.4826 * mad, variability / 2.0)
+            uncertainty = max(7.0, 2.0 * 1.4826 * mad, variability / 2.0)
             lower = float(np.clip(median_percent - uncertainty, 0.0, 95.0))
             upper = float(np.clip(median_percent + uncertainty, 0.0, 95.0))
 
-            representative = min(
+            representative = max(
                 measured,
-                key=lambda m: abs(m.measurement.diameter_stenosis_percent - median_percent),
+                key=lambda item: (
+                    0.55 * item.frame_quality.total_score
+                    + 0.45 * item.measurement.quality_score
+                    - 0.01 * abs(
+                        item.measurement.diameter_stenosis_percent - median_percent
+                    )
+                ),
             )
             candidate = representative.candidate
 
             reference_px = float(np.median(
-                [m.measurement.reference_diameter_px for m in measured]
+                [item.measurement.reference_diameter_px for item in measured]
             ))
             mld_px = float(np.median(
-                [m.measurement.minimum_lumen_diameter_px for m in measured]
+                [item.measurement.minimum_lumen_diameter_px for item in measured]
             ))
             lesion_length_px = float(np.median(
-                [m.measurement.lesion_length_px for m in measured]
+                [item.measurement.lesion_length_px for item in measured]
+            ))
+            border_confidence = float(np.median(
+                [item.measurement.border_confidence for item in measured]
+            ))
+            longitudinal_positions = [
+                item.measurement.longitudinal_position
+                for item in measured
+                if item.measurement.longitudinal_position is not None
+            ]
+            longitudinal_position = (
+                float(np.median(longitudinal_positions))
+                if longitudinal_positions
+                else None
+            )
+            projected_span = float(max(
+                item.measurement.projected_reference_span_px for item in measured
             ))
 
             mm_measurements = [
-                m.measurement
-                for m in measured
-                if m.measurement.reference_diameter_mm is not None
-                and m.measurement.minimum_lumen_diameter_mm is not None
-                and m.measurement.lesion_length_mm is not None
+                item.measurement
+                for item in measured
+                if item.measurement.reference_diameter_mm is not None
+                and item.measurement.minimum_lumen_diameter_mm is not None
+                and item.measurement.lesion_length_mm is not None
             ]
             reference_mm = mld_mm = lesion_length_mm = None
             calibration_source = None
             if len(mm_measurements) >= min_qca_frames:
                 calibration_names = {
-                    str(m.calibration_source)
-                    for m in mm_measurements
-                    if m.calibration_source
+                    str(item.calibration_source)
+                    for item in mm_measurements
+                    if item.calibration_source
                 }
                 if len(calibration_names) == 1:
                     reference_mm = float(np.median(
-                        [m.reference_diameter_mm for m in mm_measurements if m.reference_diameter_mm is not None]
+                        [item.reference_diameter_mm for item in mm_measurements]
                     ))
                     mld_mm = float(np.median(
-                        [m.minimum_lumen_diameter_mm for m in mm_measurements if m.minimum_lumen_diameter_mm is not None]
+                        [item.minimum_lumen_diameter_mm for item in mm_measurements]
                     ))
                     lesion_length_mm = float(np.median(
-                        [m.lesion_length_mm for m in mm_measurements if m.lesion_length_mm is not None]
+                        [item.lesion_length_mm for item in mm_measurements]
                     ))
                     calibration_source = next(iter(calibration_names))
 
             digest = sha256(
-                f"{source_id}|{candidate.frame}|{candidate.x:.3f}|{candidate.y:.3f}|{median_percent:.2f}".encode("utf-8")
+                f"{source_id}|{candidate.frame}|{candidate.x:.3f}|"
+                f"{candidate.y:.3f}|{median_percent:.2f}".encode("utf-8")
             ).hexdigest()[:12]
 
             high_priority = (
@@ -286,8 +441,10 @@ class StenozResearchPlugin:
             )
 
             evidence = []
-            ordered_measured = [representative] + [m for m in measured if m is not representative]
-            for evidence_rank, item in enumerate(ordered_measured[:3], start=1):
+            ordered_measured = [representative] + [
+                item for item in measured if item is not representative
+            ]
+            for evidence_rank, item in enumerate(ordered_measured[:4], start=1):
                 e_candidate = item.candidate
                 e_measurement = item.measurement
                 evidence.append(
@@ -309,11 +466,11 @@ class StenozResearchPlugin:
                             6,
                         ),
                         "description": (
-                            f"QCA evidence {evidence_rank}; direct-model score "
-                            f"{e_candidate.confidence:.2f}; frame stenosis estimate "
+                            f"QCA evidence {evidence_rank}; lesion score "
+                            f"{e_candidate.confidence:.2f}; frame stenosis "
                             f"{e_measurement.diameter_stenosis_percent:.1f}%; "
-                            f"geometry quality {e_measurement.quality_label}. "
-                            "Research measurement only."
+                            f"frame quality {item.frame_quality.total_score:.2f}; "
+                            f"border confidence {e_measurement.border_confidence:.2f}."
                         ),
                     }
                 )
@@ -324,10 +481,12 @@ class StenozResearchPlugin:
                 if reference_mm is not None and mld_mm is not None and lesion_length_mm is not None
                 else (
                     f" Reference diameter {reference_px:.1f} px; MLD {mld_px:.1f} px; "
-                    f"lesion length {lesion_length_px:.1f} px. No reliable physical calibration."
+                    f"lesion length {lesion_length_px:.1f} px. "
+                    "Physical values withheld because reliable calibration was unavailable."
                 )
             )
 
+            representative_quality = representative.frame_quality
             findings.append(
                 {
                     "id": f"qca-{digest}",
@@ -349,17 +508,24 @@ class StenozResearchPlugin:
                     "measurementFrameCount": len(measured),
                     "measurementVariabilityPercent": round(variability, 2),
                     "calibrationSource": calibration_source,
+                    "borderConfidence": round(border_confidence, 4),
+                    "longitudinalPosition": round(longitudinal_position, 5) if longitudinal_position is not None else None,
+                    "projectedReferenceSpanPixels": round(projected_span, 2),
+                    "frameQualityScore": round(representative_quality.total_score, 4),
+                    "frameOverlapRisk": round(representative_quality.overlap_risk, 4),
+                    "injectionSide": injection_side,
                     "priority": "HighPriorityReview" if high_priority else "Review",
                     "explanation": (
-                        "Research QCA candidate supported by a direct stenosis model, "
-                        "coronary vessel segmentation, bilateral reference-vessel geometry, "
-                        "and repeatable measurements across multiple sampled cine frames. "
-                        "Coronary artery identity is not yet automatically assigned."
+                        "Research QCA candidate supported by direct stenosis localization, "
+                        "coronary vessel segmentation, sub-pixel lumen borders, bilateral "
+                        "reference-vessel geometry, high-quality frame selection and repeatable "
+                        "measurements across multiple cine frames."
                     ),
                     "measurementSummary": (
                         f"Research diameter stenosis {median_percent:.1f}% "
-                        f"(range {lower:.1f}-{upper:.1f}%); {quality_label} measurement quality; "
-                        f"{len(measured)} measured frame(s); variability {variability:.1f} percentage points."
+                        f"(range {lower:.1f}-{upper:.1f}%); {quality_label} quality; "
+                        f"{len(measured)} measured frame(s); variability {variability:.1f} pp; "
+                        f"frame quality {frame_quality:.2f}; border confidence {border_confidence:.2f}."
                         + physical_summary
                         + " Not certified clinical QCA."
                     ),
@@ -367,11 +533,134 @@ class StenozResearchPlugin:
                 }
             )
 
+        # Independent total-occlusion path. It is not derived from the QCA
+        # percentage and therefore cannot turn a 90-95% stenosis into 100%.
+        occlusion_frames: list[_OcclusionFrameCandidate] = []
+        for ref in selected_refs:
+            data = frame_data[ref.global_index]
+            stenosis_points = [
+                (candidate.x, candidate.y, candidate.confidence)
+                for candidate in candidates_by_frame.get(ref.global_index, [])
+            ]
+            for occlusion in detect_total_occlusion_candidates(
+                data.vessel_mask,
+                data.vessel_probability,
+                stenosis_points,
+            ):
+                occlusion_frames.append(
+                    _OcclusionFrameCandidate(
+                        frame=ref.global_index,
+                        candidate=occlusion,
+                        frame_quality=data.quality,
+                    )
+                )
+
+        occlusion_groups = self._group_occlusion_candidates(
+            occlusion_frames,
+            selected_refs,
+        )
+        min_occlusion_support = max(
+            3, int(os.getenv("CARDIO_OCCLUSION_MIN_SUPPORT", "3"))
+        )
+
+        for group_index, group in enumerate(occlusion_groups, start=1):
+            if len(group) < min_occlusion_support:
+                continue
+
+            scores = np.asarray([item.candidate.score for item in group], dtype=float)
+            quality_scores = np.asarray(
+                [item.frame_quality.total_score for item in group],
+                dtype=float,
+            )
+            aggregate_score = float(np.median(scores))
+            aggregate_frame_quality = float(np.median(quality_scores))
+            if aggregate_score < 0.68 or aggregate_frame_quality < 0.60:
+                continue
+
+            representative = max(
+                group,
+                key=lambda item: (
+                    item.candidate.score,
+                    item.frame_quality.total_score,
+                ),
+            )
+            occlusion = representative.candidate
+            quality_label = (
+                "High"
+                if aggregate_score >= 0.82 and len(group) >= 4
+                else "Moderate"
+            )
+            digest = sha256(
+                f"{source_id}|OCC|{occlusion.x:.2f}|{occlusion.y:.2f}|"
+                f"{aggregate_score:.3f}".encode("utf-8")
+            ).hexdigest()[:12]
+
+            evidence = [
+                {
+                    "sourceId": source_id,
+                    "frameStart": item.frame,
+                    "frameEnd": item.frame,
+                    "projection": projection,
+                    "normalizedCenterX": round(item.candidate.x / INPUT_SIZE, 6),
+                    "normalizedCenterY": round(item.candidate.y / INPUT_SIZE, 6),
+                    "normalizedRadius": 0.06,
+                    "description": (
+                        f"Independent total-occlusion evidence; abrupt cutoff "
+                        f"{item.candidate.abruptness_score:.2f}; distal void "
+                        f"{item.candidate.distal_void_score:.2f}; detector score "
+                        f"{item.candidate.score:.2f}; frame quality "
+                        f"{item.frame_quality.total_score:.2f}."
+                    ),
+                }
+                for item in sorted(
+                    group,
+                    key=lambda item: item.candidate.score,
+                    reverse=True,
+                )[:4]
+            ]
+
+            findings.append(
+                {
+                    "id": f"occ-{digest}",
+                    "vessel": "Unspecified coronary vessel",
+                    "segment": "image-level review",
+                    "findingType": "SuspectedTotalOcclusion",
+                    "confidence": round(aggregate_score, 4),
+                    "occlusionPercent": 100.0,
+                    "totalOcclusionScore": round(aggregate_score, 4),
+                    "totalOcclusionFrameCount": len(group),
+                    "chronicityEstablished": False,
+                    "measurementQuality": quality_label,
+                    "measurementQualityScore": round(
+                        0.75 * aggregate_score + 0.25 * aggregate_frame_quality,
+                        4,
+                    ),
+                    "measurementFrameCount": len(group),
+                    "frameQualityScore": round(aggregate_frame_quality, 4),
+                    "injectionSide": injection_side,
+                    "priority": "HighPriorityReview",
+                    "explanation": (
+                        "Separate research total-occlusion detector found a persistent "
+                        "abrupt vessel cutoff with absent forward vessel probability and "
+                        "independent stenosis-localization support. This is not derived "
+                        "from a high QCA percentage."
+                    ),
+                    "measurementSummary": (
+                        "Suspected total occlusion candidate. If total occlusion is "
+                        "confirmed by the physician, anatomic diameter stenosis is 100%. "
+                        "Chronicity is NOT established by this image detector, so it does "
+                        "not by itself diagnose CTO."
+                    ),
+                    "evidence": evidence,
+                }
+            )
+
         max_reported_findings = max(
-            1, int(os.getenv("CARDIO_MAX_REPORTED_FINDINGS", "8"))
+            1, int(os.getenv("CARDIO_MAX_REPORTED_FINDINGS", "10"))
         )
         findings.sort(
             key=lambda finding: (
+                1 if finding.get("findingType") == "SuspectedTotalOcclusion" else 0,
                 float(finding.get("estimatedDiameterStenosisPercent") or 0),
                 float(finding.get("confidence") or 0),
             ),
@@ -384,14 +673,23 @@ class StenozResearchPlugin:
             "findings": findings[:max_reported_findings],
             "coverage": [],
             "analysisNote": (
-                f"Sampled {len(sample_refs)} of {len(frame_refs)} frame(s). "
-                f"{rejected_temporal_or_qca} persistent candidate group(s) were withheld "
-                "because multi-frame QCA quality/consistency gates failed. "
-                "No finding must never be interpreted as normal or disease-free."
+                f"Sampled {len(sample_refs)} of {len(frame_refs)} frame(s); "
+                f"{len(selected_refs)} passed contrast/sharpness/vessel/overlap quality gates. "
+                f"{rejected_temporal_or_qca} persistent stenosis candidate group(s) were withheld "
+                "because QCA geometry or multi-frame repeatability failed. "
+                "Single-view foreshortening cannot be proven absent; whole-case multi-view "
+                "linking ranks compatible projections by vessel span and frame quality. "
+                "A negative result is never clinical clearance."
             ),
         }
 
-    def _index_frames(self, paths: list[Path]) -> Iterable[_FrameRef]:
+    def _index_frames(
+        self,
+        paths: list[Path],
+        *,
+        explicit_calibration: Any = None,
+        explicit_calibration_source: Any = None,
+    ) -> Iterable[_FrameRef]:
         import pydicom
 
         global_index = 0
@@ -408,7 +706,42 @@ class StenozResearchPlugin:
             photometric = str(getattr(ds, "PhotometricInterpretation", "") or "")
             rows = int(getattr(ds, "Rows", INPUT_SIZE) or INPUT_SIZE)
             columns = int(getattr(ds, "Columns", INPUT_SIZE) or INPUT_SIZE)
-            row_mm, column_mm, calibration_source = self._extract_spacing(ds)
+
+            try:
+                explicit_value = (
+                    float(explicit_calibration)
+                    if explicit_calibration is not None
+                    else None
+                )
+            except Exception:
+                explicit_value = None
+
+            calibration = calibration_from_dicom(
+                ds,
+                explicit_mm_per_pixel=explicit_value,
+                explicit_source=(
+                    str(explicit_calibration_source)
+                    if explicit_calibration_source
+                    else None
+                ),
+            )
+
+            metadata_text = " ".join(
+                str(getattr(ds, name, "") or "")
+                for name in (
+                    "SeriesDescription",
+                    "ProtocolName",
+                    "StudyDescription",
+                    "BodyPartExamined",
+                )
+            )
+
+            primary_angle = self._safe_float(
+                getattr(ds, "PositionerPrimaryAngle", None)
+            )
+            secondary_angle = self._safe_float(
+                getattr(ds, "PositionerSecondaryAngle", None)
+            )
 
             for local_index in range(max(1, count)):
                 yield _FrameRef(
@@ -418,55 +751,25 @@ class StenozResearchPlugin:
                     photometric=photometric,
                     rows=rows,
                     columns=columns,
-                    pixel_spacing_row_mm=row_mm,
-                    pixel_spacing_column_mm=column_mm,
-                    calibration_source=calibration_source,
+                    calibration=calibration,
+                    metadata_text=metadata_text,
+                    primary_angle=primary_angle,
+                    secondary_angle=secondary_angle,
                 )
                 global_index += 1
 
     @staticmethod
-    def _extract_spacing(ds: Any) -> tuple[float | None, float | None, str | None]:
-        for attribute, label in (
-            ("PixelSpacing", "DICOM PixelSpacing image-plane research calibration"),
-            ("ImagerPixelSpacing", "DICOM ImagerPixelSpacing detector-plane research calibration"),
-        ):
-            value = getattr(ds, attribute, None)
-            if value is None:
-                continue
-            try:
-                row_mm = float(value[0])
-                column_mm = float(value[1])
-            except Exception:
-                continue
-            if row_mm > 0 and column_mm > 0 and math.isfinite(row_mm) and math.isfinite(column_mm):
-                return row_mm, column_mm, label
-        return None, None, None
-
-    @staticmethod
-    def _model_grid_spacing(ref: _FrameRef) -> tuple[float | None, str | None]:
-        if (
-            ref.pixel_spacing_row_mm is None
-            or ref.pixel_spacing_column_mm is None
-            or not ref.calibration_source
-            or ref.rows <= 0
-            or ref.columns <= 0
-        ):
-            return None, None
-
-        row_on_grid = ref.pixel_spacing_row_mm * ref.rows / INPUT_SIZE
-        column_on_grid = ref.pixel_spacing_column_mm * ref.columns / INPUT_SIZE
-        ratio = max(row_on_grid, column_on_grid) / max(1e-9, min(row_on_grid, column_on_grid))
-        if ratio > 1.10:
-            return None, None
-
-        spacing = (row_on_grid + column_on_grid) / 2.0
-        return spacing, ref.calibration_source
+    def _safe_float(value: Any) -> float | None:
+        try:
+            number = float(value)
+        except Exception:
+            return None
+        return number if math.isfinite(number) else None
 
     @staticmethod
     def _sample_frames(frames: list[_FrameRef], max_frames: int) -> list[_FrameRef]:
         if len(frames) <= max_frames:
             return frames
-
         indices = np.linspace(0, len(frames) - 1, num=max_frames, dtype=int)
         unique = sorted(set(int(i) for i in indices))
         return [frames[i] for i in unique]
@@ -481,7 +784,9 @@ class StenozResearchPlugin:
         elif arr.ndim != 2:
             arr = np.squeeze(arr)
             if arr.ndim != 2:
-                raise ValueError(f"Unsupported DICOM pixel shape {arr.shape} in {ref.path.name}")
+                raise ValueError(
+                    f"Unsupported DICOM pixel shape {arr.shape} in {ref.path.name}"
+                )
 
         image = arr.astype(np.float32)
         if ref.photometric.upper() == "MONOCHROME1":
@@ -493,12 +798,15 @@ class StenozResearchPlugin:
         assert torch is not None
 
         image = image.astype(np.float32)
-        lo = float(np.nanmin(image))
-        hi = float(np.nanmax(image))
+        finite = image[np.isfinite(image)]
+        if finite.size < 16:
+            return None
+        lo = float(np.percentile(finite, 1.0))
+        hi = float(np.percentile(finite, 99.0))
         if not math.isfinite(lo) or not math.isfinite(hi) or hi <= lo:
             return None
 
-        image = (image - lo) / (hi - lo + 1e-6)
+        image = np.clip((image - lo) / (hi - lo + 1e-6), 0.0, 1.0)
         tensor = torch.from_numpy(image[None, None])
         return torch.nn.functional.interpolate(
             tensor,
@@ -558,26 +866,33 @@ class StenozResearchPlugin:
         candidates.sort(key=lambda item: (item.confidence, item.area), reverse=True)
         return candidates[:max_candidates]
 
-    def _segment_vessels(self, image: np.ndarray) -> np.ndarray:
+    def _segment_vessels(self, image: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         torch = self._torch
         ndi = self._ndi
         assert torch is not None and ndi is not None and self._vessel_model is not None
 
         tensor = self._prepare_tensor(image)
         if tensor is None:
-            return np.zeros((INPUT_SIZE, INPUT_SIZE), dtype=bool)
+            return (
+                np.zeros((INPUT_SIZE, INPUT_SIZE), dtype=np.float32),
+                np.zeros((INPUT_SIZE, INPUT_SIZE), dtype=bool),
+            )
 
         with torch.no_grad():
-            prob = torch.sigmoid(self._vessel_model(tensor))[0, 0].cpu().numpy()
+            probability = torch.sigmoid(
+                self._vessel_model(tensor)
+            )[0, 0].cpu().numpy().astype(np.float32)
 
-        mask = prob > 0.50
+        mask = probability > 0.50
         labels, count = ndi.label(mask)
         if count:
             sizes = np.bincount(labels.ravel())
             keep = sizes >= 60
             keep[0] = False
             mask = keep[labels]
-        return mask
+            probability = probability * mask.astype(np.float32)
+
+        return probability, mask
 
     @staticmethod
     def _group_candidates(
@@ -587,16 +902,21 @@ class StenozResearchPlugin:
         if not candidates:
             return []
 
-        sampled_indices = [x.global_index for x in sampled]
-        gaps = [b - a for a, b in zip(sampled_indices, sampled_indices[1:]) if b > a]
+        sampled_indices = [item.global_index for item in sampled]
+        gaps = [
+            b - a
+            for a, b in zip(sampled_indices, sampled_indices[1:])
+            if b > a
+        ]
         typical_gap = int(np.median(gaps)) if gaps else 1
         merge_gap = max(2, typical_gap * 2)
         max_spatial_shift = 96.0
 
-        # Greedy spatiotemporal tracking. Multiple lesion candidates can coexist
-        # in the same frame; a track may contain at most one candidate per frame.
         tracks: list[list[_Candidate]] = []
-        for candidate in sorted(candidates, key=lambda item: (item.frame, -item.confidence)):
+        for candidate in sorted(
+            candidates,
+            key=lambda item: (item.frame, -item.confidence),
+        ):
             best_track: list[_Candidate] | None = None
             best_distance = float("inf")
 
@@ -607,7 +927,10 @@ class StenozResearchPlugin:
                 if candidate.frame - last.frame > merge_gap:
                     continue
 
-                distance = math.hypot(candidate.x - last.x, candidate.y - last.y)
+                distance = math.hypot(
+                    candidate.x - last.x,
+                    candidate.y - last.y,
+                )
                 if distance <= max_spatial_shift and distance < best_distance:
                     best_track = track
                     best_distance = distance
@@ -632,7 +955,67 @@ class StenozResearchPlugin:
 
         return sorted(
             result,
-            key=lambda group: (group.support_count, group.winner.confidence),
+            key=lambda group: (
+                group.support_count,
+                group.winner.confidence,
+            ),
             reverse=True,
         )
 
+    @staticmethod
+    def _group_occlusion_candidates(
+        candidates: list[_OcclusionFrameCandidate],
+        sampled: list[_FrameRef],
+    ) -> list[list[_OcclusionFrameCandidate]]:
+        if not candidates:
+            return []
+
+        sampled_indices = [item.global_index for item in sampled]
+        gaps = [
+            b - a
+            for a, b in zip(sampled_indices, sampled_indices[1:])
+            if b > a
+        ]
+        typical_gap = int(np.median(gaps)) if gaps else 1
+        merge_gap = max(2, typical_gap * 2)
+        max_spatial_shift = 72.0
+
+        tracks: list[list[_OcclusionFrameCandidate]] = []
+        for item in sorted(
+            candidates,
+            key=lambda candidate: (
+                candidate.frame,
+                -candidate.candidate.score,
+            ),
+        ):
+            best_track = None
+            best_distance = float("inf")
+
+            for track in tracks:
+                last = track[-1]
+                if item.frame <= last.frame:
+                    continue
+                if item.frame - last.frame > merge_gap:
+                    continue
+
+                distance = math.hypot(
+                    item.candidate.x - last.candidate.x,
+                    item.candidate.y - last.candidate.y,
+                )
+                if distance <= max_spatial_shift and distance < best_distance:
+                    best_track = track
+                    best_distance = distance
+
+            if best_track is None:
+                tracks.append([item])
+            else:
+                best_track.append(item)
+
+        return sorted(
+            tracks,
+            key=lambda track: (
+                len(track),
+                float(np.median([item.candidate.score for item in track])),
+            ),
+            reverse=True,
+        )
