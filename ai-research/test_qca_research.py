@@ -5,9 +5,12 @@ measurement code behaves sensibly on controlled binary-vessel geometry.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 
 from qca_research import measure_qca
+from stenoz_research_plugin import _Candidate, _FrameRef, StenozResearchPlugin
 
 
 def make_horizontal_vessel(
@@ -58,8 +61,26 @@ def test_candidate_off_vessel_abstains() -> None:
     assert measurement is None, "off-vessel candidate must be rejected"
 
 
+def test_multiple_candidate_tracks_stay_separate() -> None:
+    frames = [
+        _FrameRef(Path("dummy.dcm"), 0, frame, "MONOCHROME2", 512, 512, None, None, None)
+        for frame in (0, 10, 20, 30)
+    ]
+    candidates = []
+    for frame in (0, 10, 20, 30):
+        candidates.append(_Candidate(frame, 0.95, 110 + frame * 0.2, 220, 120))
+        candidates.append(_Candidate(frame, 0.90, 390 - frame * 0.2, 285, 100))
+
+    groups = StenozResearchPlugin._group_candidates(candidates, frames)
+    supported = [group for group in groups if group.support_count == 4]
+    assert len(supported) == 2, groups
+    centers = sorted(group.winner.x for group in supported)
+    assert centers[0] < 200 and centers[1] > 300, centers
+
+
 if __name__ == "__main__":
     test_known_narrowing()
     test_uniform_vessel_abstains()
     test_candidate_off_vessel_abstains()
+    test_multiple_candidate_tracks_stay_separate()
     print("Research QCA synthetic checks passed.")
