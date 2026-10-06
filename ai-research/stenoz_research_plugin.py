@@ -222,15 +222,27 @@ class StenozResearchPlugin:
         selected_refs = [ref for ref in sample_refs if ref.global_index in usable_set]
 
         if len(selected_refs) < min_support:
+            fallback_findings = self._build_low_quality_review_findings(
+                source_id=source_id,
+                projection=projection,
+                refs=sample_refs,
+                raw_cache=raw_cache,
+                qualities=qualities,
+                threshold=threshold,
+                min_area=min_area,
+                max_candidates_per_frame=max_candidates_per_frame,
+                min_support=max(3, min_support),
+            )
             return {
                 "modelId": self.model_id,
                 "modelVersion": self.model_version,
-                "findings": [],
+                "findings": fallback_findings,
                 "coverage": [],
                 "analysisNote": (
                     f"Frame-quality gate retained only {len(selected_refs)} of "
-                    f"{len(sample_refs)} sampled frame(s). Contrast/overlap/sharpness "
-                    "quality was insufficient for a reliable research measurement."
+                    f"{len(sample_refs)} sampled frame(s). Quantitative QCA was withheld. "
+                    f"{len(fallback_findings)} persistent vessel-supported review candidate(s) "
+                    "were returned without a stenosis percentage."
                 ),
             }
 
@@ -784,6 +796,21 @@ class StenozResearchPlugin:
             )
             findings.extend(withheld_review_candidates[:3])
 
+        if not findings:
+            findings.extend(
+                self._build_low_quality_review_findings(
+                    source_id=source_id,
+                    projection=projection,
+                    refs=sample_refs,
+                    raw_cache=raw_cache,
+                    qualities=qualities,
+                    threshold=threshold,
+                    min_area=min_area,
+                    max_candidates_per_frame=max_candidates_per_frame,
+                    min_support=max(3, min_support),
+                )
+            )
+
         max_reported_findings = max(
             1, int(os.getenv("CARDIO_MAX_REPORTED_FINDINGS", "10"))
         )
@@ -813,6 +840,154 @@ class StenozResearchPlugin:
                 "A negative result is never clinical clearance."
             ),
         }
+
+    def _build_low_quality_review_findings(
+        self,
+        *,
+        source_id: str,
+        projection: str | None,
+        refs: list[_FrameRef],
+        raw_cache: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]],
+        qualities: dict[int, FrameQuality],
+        threshold: float,
+        min_area: int,
+        max_candidates_per_frame: int,
+        min_support: int,
+    ) -> list[dict[str, Any]]:
+        """Return review-only persistent regions when QCA quality is insufficient.
+
+        These findings intentionally contain no stenosis percentage. A region
+        must still be temporally persistent, high-confidence, and locally
+        supported by the vessel segmentation probability map.
+        """
+        review_threshold = max(0.78, threshold)
+        candidates: list[_Candidate] = []
+
+        for ref in refs:
+            cached = raw_cache.get(ref.global_index)
+            if cached is None:
+                continue
+
+            image, vessel_probability, _ = cached
+            frame_candidates = self._detect_frame_candidates(
+                image,
+                ref.global_index,
+                review_threshold,
+                min_area,
+                max_candidates_per_frame,
+            )
+
+            for candidate in frame_candidates:
+                x = int(round(candidate.x))
+                y = int(round(candidate.y))
+                x0 = max(0, x - 5)
+                x1 = min(vessel_probability.shape[1], x + 6)
+                y0 = max(0, y - 5)
+                y1 = min(vessel_probability.shape[0], y + 6)
+                patch = vessel_probability[y0:y1, x0:x1]
+                vessel_support = float(np.max(patch)) if patch.size else 0.0
+                if vessel_support >= 0.45:
+                    candidates.append(candidate)
+
+        groups = self._group_candidates(candidates, refs)
+        groups = [
+            group
+            for group in groups
+            if group.support_count >= min_support
+            and group.winner.confidence >= 0.80
+        ]
+
+        findings: list[dict[str, Any]] = []
+        for group in groups[:3]:
+            winner = group.winner
+            evidence_members = sorted(
+                group.members,
+                key=lambda item: (
+                    qualities.get(item.frame).total_score
+                    if item.frame in qualities
+                    else 0.0,
+                    item.confidence,
+                ),
+                reverse=True,
+            )[:4]
+
+            evidence = []
+            for rank, item in enumerate(evidence_members, start=1):
+                quality = (
+                    qualities[item.frame].total_score
+                    if item.frame in qualities
+                    else 0.0
+                )
+                evidence.append(
+                    {
+                        "sourceId": source_id,
+                        "frameStart": item.frame,
+                        "frameEnd": item.frame,
+                        "projection": projection,
+                        "normalizedCenterX": round(item.x / INPUT_SIZE, 6),
+                        "normalizedCenterY": round(item.y / INPUT_SIZE, 6),
+                        "normalizedRadius": round(
+                            min(
+                                0.16,
+                                max(
+                                    0.04,
+                                    (math.sqrt(item.area / math.pi) / INPUT_SIZE) * 1.8,
+                                ),
+                            ),
+                            6,
+                        ),
+                        "description": (
+                            f"Review-only persistent vessel-supported region {rank}; "
+                            f"localization score {item.confidence:.2f}; "
+                            f"frame quality {quality:.2f}. "
+                            "No stenosis percentage was reported."
+                        ),
+                    }
+                )
+
+            if not evidence:
+                continue
+
+            digest = sha256(
+                f"{source_id}|LOWQ|{winner.frame}|{winner.x:.3f}|"
+                f"{winner.y:.3f}".encode("utf-8")
+            ).hexdigest()[:12]
+
+            best_quality = max(
+                (
+                    qualities[item.frame].total_score
+                    for item in evidence_members
+                    if item.frame in qualities
+                ),
+                default=0.0,
+            )
+
+            findings.append(
+                {
+                    "id": f"review-{digest}",
+                    "vessel": "Unspecified coronary vessel",
+                    "segment": "image-level review",
+                    "findingType": "ResearchStenosisCandidate",
+                    "confidence": round(winner.confidence, 4),
+                    "measurementQuality": "Limited",
+                    "measurementQualityScore": round(best_quality, 4),
+                    "measurementFrameCount": group.support_count,
+                    "frameQualityScore": round(best_quality, 4),
+                    "priority": "Review",
+                    "explanation": (
+                        "Persistent high-confidence research region with local vessel "
+                        "segmentation support. Quantitative QCA quality was insufficient, "
+                        "so only the location is shown for physician review."
+                    ),
+                    "measurementSummary": (
+                        f"Review-only location seen across {group.support_count} sampled "
+                        "frame(s). No stenosis percentage reported."
+                    ),
+                    "evidence": evidence,
+                }
+            )
+
+        return findings
 
     def _index_frames(
         self,
