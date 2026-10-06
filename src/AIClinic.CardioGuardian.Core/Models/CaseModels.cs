@@ -306,7 +306,7 @@ public sealed class GuardianFinding
 
         if (string.Equals(FindingType, "SuspectedTotalOcclusion", StringComparison.OrdinalIgnoreCase))
         {
-            if (OcclusionPercent is not 100)
+            if (OcclusionPercent != 100.0)
                 throw new InvalidOperationException(
                     "A suspected total-occlusion finding must use the separate OcclusionPercent=100 field.");
             if (TotalOcclusionScore is null or < 0.68)
