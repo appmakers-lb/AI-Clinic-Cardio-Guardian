@@ -158,6 +158,89 @@
             ],
             "minimum": 0,
             "maximum": 100
+          },
+          "referenceDiameterPixels": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "minimumLumenDiameterPixels": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "lesionLengthPixels": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "referenceDiameterMm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "minimumLumenDiameterMm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "lesionLengthMm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "measurementQuality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "Limited",
+              "Moderate",
+              "High",
+              null
+            ]
+          },
+          "measurementQualityScore": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "measurementFrameCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "measurementVariabilityPercent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "calibrationSource": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       }
