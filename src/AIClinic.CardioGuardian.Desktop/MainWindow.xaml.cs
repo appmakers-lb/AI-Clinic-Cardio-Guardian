@@ -185,9 +185,13 @@ public partial class MainWindow : Window
             {
                 var abstention = package.AnalysisNote.OrFallback(
                     "No candidate passed the multi-frame vessel/QCA quality gates.");
+                FindingDetailText.Text =
+                    "No AI region was strong enough to display.\n\n" +
+                    abstention +
+                    "\n\nThis does not mean the artery is normal.";
                 AppendAI(
                     abstention + " This must not be interpreted as no stenosis or a normal study.");
-                StatusText.Text = "No QCA-qualified finding reported — review analysis note/evidence quality.";
+                StatusText.Text = "No displayable AI region — review quality note.";
             }
 
             _audit.Write("local_ai_analysis_completed", new
@@ -299,6 +303,11 @@ public partial class MainWindow : Window
 
             if (findings.Count == 0)
             {
+                FindingDetailText.Text =
+                    "No AI region was strong enough to display for this case.\n\n" +
+                    package.AnalysisNote.OrFallback(
+                        "Frame quality / vessel support / repeatability gates withheld the result.") +
+                    "\n\nThis does not mean the study is normal.";
                 AppendAI(
                     "No finding passed the frame-quality, vessel, QCA/occlusion, and multi-frame gates. " +
                     "This is not evidence of a normal study and is not clinical clearance.");
