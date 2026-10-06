@@ -57,12 +57,12 @@ public partial class MainWindow : Window
         VoiceStatusText.Text = $"Speech recognition: {_voice.RecognitionStatus}";
         ListenButton.IsEnabled = _voice.SpeechRecognitionAvailable;
 
-        _audit.Write("application_started", new { version = "1.3.0", mode = "RESEARCH" });
+        _audit.Write("application_started", new { version = "1.4.0", mode = "RESEARCH" });
 
         RefreshAll();
         AppendAI(
             "Research Mode ready. Import a cardiac DICOM CD/USB to review all cine runs. " +
-            "The optional v1.3 research model only surfaces stenosis candidates that also have vessel support " +
+            "The optional v1.4 research model only surfaces stenosis candidates that also have vessel support " +
             "and temporal persistence. When geometry quality is sufficient it shows a wide-range apparent diameter " +
             "reduction estimate. It is not clinical QCA and a negative result is never a clearance statement.");
     }
@@ -952,13 +952,22 @@ public partial class MainWindow : Window
         OverlayCanvas.Children.Add(horizontal);
         OverlayCanvas.Children.Add(vertical);
 
-        var labelText = _selectedFinding!.EstimatedDiameterStenosisPercent is double estimate
+        var isTotalOcclusion = string.Equals(
+            _selectedFinding!.FindingType,
+            "SuspectedTotalOcclusion",
+            StringComparison.OrdinalIgnoreCase);
+
+        var labelText = isTotalOcclusion
             ? (_findingFocusMode
-                ? $"FOCUS • QCA ~{estimate:0}% • Esc to exit"
-                : $"RESEARCH QCA • ~{estimate:0}% diameter stenosis")
-            : (_findingFocusMode
-                ? $"FOCUS • candidate score {_selectedFinding.Confidence:0.00} • Esc to exit"
-                : $"RESEARCH AI CANDIDATE • score {_selectedFinding.Confidence:0.00}");
+                ? "FOCUS • POSSIBLE TOTAL OCCLUSION • Esc to exit"
+                : "RESEARCH • POSSIBLE TOTAL OCCLUSION")
+            : _selectedFinding.EstimatedDiameterStenosisPercent is double estimate
+                ? (_findingFocusMode
+                    ? $"FOCUS • QCA ~{estimate:0}% • Esc to exit"
+                    : $"RESEARCH QCA • ~{estimate:0}% diameter stenosis")
+                : (_findingFocusMode
+                    ? $"FOCUS • candidate score {_selectedFinding.Confidence:0.00} • Esc to exit"
+                    : $"RESEARCH AI CANDIDATE • score {_selectedFinding.Confidence:0.00}");
 
         var label = new Border
         {
@@ -1108,9 +1117,14 @@ public partial class MainWindow : Window
         _findingFocusMode = true;
         DrawSelectedFindingOverlay();
 
-        var estimateText = _selectedFinding?.EstimatedDiameterStenosisPercent is double estimate
-            ? $"QCA ~{estimate:0}% diameter stenosis"
-            : $"candidate score {_selectedFinding?.Confidence:0.00}";
+        var estimateText = string.Equals(
+                _selectedFinding?.FindingType,
+                "SuspectedTotalOcclusion",
+                StringComparison.OrdinalIgnoreCase)
+            ? "possible total occlusion"
+            : _selectedFinding?.EstimatedDiameterStenosisPercent is double estimate
+                ? $"QCA ~{estimate:0}% diameter stenosis"
+                : $"candidate score {_selectedFinding?.Confidence:0.00}";
 
         StatusText.Text =
             $"Finding Focus Mode — {estimateText}. Research estimate only; press Esc to return to full cine.";
@@ -1411,7 +1425,18 @@ public partial class MainWindow : Window
         var frame = finding.Evidence.FirstOrDefault()?.FrameStart;
         var frameText = frame.HasValue ? $" at frame {frame.Value + 1}" : string.Empty;
 
-        if (finding.EstimatedDiameterStenosisPercent is double estimate &&
+        if (string.Equals(
+                finding.FindingType,
+                "SuspectedTotalOcclusion",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            var supportingFrames = finding.TotalOcclusionFrameCount ?? 0;
+            _voice.Speak(
+                $"Doctor, the separate research occlusion detector flagged a possible total occlusion{frameText}. " +
+                $"It persisted across {supportingFrames} frames. Please review the evidence. " +
+                "Chronicity is not established, so this is not by itself a C T O diagnosis.");
+        }
+        else if (finding.EstimatedDiameterStenosisPercent is double estimate &&
             finding.EstimatedDiameterStenosisLowerPercent is double lower &&
             finding.EstimatedDiameterStenosisUpperPercent is double upper)
         {
@@ -1553,13 +1578,25 @@ public partial class MainWindow : Window
             };
 
             var sourceMarker = finding.Source == FindingSource.ManualResearch ? "MANUAL" : "MODEL";
+            var severityLabel = string.Equals(
+                    finding.FindingType,
+                    "SuspectedTotalOcclusion",
+                    StringComparison.OrdinalIgnoreCase)
+                ? "[possible total occlusion]"
+                : finding.EstimatedDiameterStenosisPercent is double estimate
+                    ? $"[~{estimate:0}% QCA]"
+                    : $"[score {finding.Confidence:0.00}]";
+            var viewLabel = finding.MultiViewConfirmed
+                ? $"[{finding.SourceSeriesCount ?? 0} series/{finding.ProjectionCount ?? 0} views]"
+                : string.Empty;
+
             var item = new ListBoxItem
             {
                 Content =
                     $"{marker} {finding.Vessel} {finding.Segment} — {HumanizeFindingType(finding.FindingType)} " +
-                    $"{(finding.EstimatedDiameterStenosisPercent is double estimate ? $"[~{estimate:0}% QCA]" : $"[score {finding.Confidence:0.00}]")} " +
+                    $"{severityLabel} " +
                     $"{(!string.IsNullOrWhiteSpace(finding.MeasurementQuality) ? $"[{finding.MeasurementQuality}]" : string.Empty)} " +
-                    $"[{sourceMarker}] [{finding.Status}]",
+                    $"{viewLabel} [{sourceMarker}] [{finding.Status}]",
                 Tag = finding
             };
 
@@ -1612,6 +1649,25 @@ public partial class MainWindow : Window
 
     private static string BuildResearchEstimateLabel(GuardianFinding finding)
     {
+        if (string.Equals(
+                finding.FindingType,
+                "SuspectedTotalOcclusion",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            var builder = new StringBuilder();
+            builder.Append("Separate total-occlusion detector: possible complete occlusion");
+            if (finding.TotalOcclusionScore is double score)
+                builder.Append($" | Detector score: {score:0.00}");
+            if (finding.TotalOcclusionFrameCount is int frames)
+                builder.Append($" | Supporting frames: {frames}");
+            if (!string.IsNullOrWhiteSpace(finding.MeasurementQuality))
+                builder.Append($" | Quality: {finding.MeasurementQuality}");
+            builder.AppendLine();
+            builder.Append("If the physician confirms total occlusion, anatomic diameter stenosis is 100%. ");
+            builder.Append("Chronicity is not established by the image detector; this is not by itself a CTO diagnosis.");
+            return builder.ToString();
+        }
+
         if (finding.EstimatedDiameterStenosisPercent is not double estimate)
             return "Research QCA: measurement withheld because current evidence did not pass quality gates.";
 
@@ -1633,6 +1689,14 @@ public partial class MainWindow : Window
         if (finding.MeasurementVariabilityPercent is double variability)
             builder.Append($" | Variability: {variability:0.#} pp");
 
+        if (finding.MultiViewConfirmed)
+        {
+            builder.Append(
+                $" | Multi-view: {finding.SourceSeriesCount ?? 0} series / {finding.ProjectionCount ?? 0} projection(s)");
+            if (finding.CrossViewVariabilityPercent is double crossView)
+                builder.Append($" | Cross-view variability: {crossView:0.#} pp");
+        }
+
         builder.AppendLine();
 
         if (finding.ReferenceDiameterMm is double referenceMm &&
@@ -1651,8 +1715,13 @@ public partial class MainWindow : Window
             builder.Append($"Reference: {referencePx:0.0} px | MLD: {mldPx:0.0} px");
             if (finding.LesionLengthPixels is double lengthPx)
                 builder.Append($" | Lesion length: {lengthPx:0.0} px");
-            builder.Append(" | Physical calibration unavailable");
+            builder.Append(" | Physical calibration withheld");
         }
+
+        if (finding.FrameQualityScore is double frameQuality)
+            builder.Append($" | Frame quality: {frameQuality:0.00}");
+        if (finding.BorderConfidence is double border)
+            builder.Append($" | Border confidence: {border:0.00}");
 
         builder.AppendLine();
         builder.Append("Research measurement — not certified clinical QCA.");
