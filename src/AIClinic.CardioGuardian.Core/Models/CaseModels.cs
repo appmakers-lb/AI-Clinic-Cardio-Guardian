@@ -127,6 +127,17 @@ public sealed class GuardianFinding
     public double? EstimatedDiameterStenosisPercent { get; init; }
     public double? EstimatedDiameterStenosisLowerPercent { get; init; }
     public double? EstimatedDiameterStenosisUpperPercent { get; init; }
+    public double? ReferenceDiameterPixels { get; init; }
+    public double? MinimumLumenDiameterPixels { get; init; }
+    public double? LesionLengthPixels { get; init; }
+    public double? ReferenceDiameterMm { get; init; }
+    public double? MinimumLumenDiameterMm { get; init; }
+    public double? LesionLengthMm { get; init; }
+    public string? MeasurementQuality { get; init; }
+    public double? MeasurementQualityScore { get; init; }
+    public int? MeasurementFrameCount { get; init; }
+    public double? MeasurementVariabilityPercent { get; init; }
+    public string? CalibrationSource { get; init; }
     public FindingStatus Status { get; private set; } = FindingStatus.Proposed;
     public DateTime CreatedAtUtc { get; init; } = DateTime.UtcNow;
     public DateTime? DispositionUpdatedAtUtc { get; private set; }
@@ -168,6 +179,51 @@ public sealed class GuardianFinding
         ValidatePercent(EstimatedDiameterStenosisPercent, nameof(EstimatedDiameterStenosisPercent));
         ValidatePercent(EstimatedDiameterStenosisLowerPercent, nameof(EstimatedDiameterStenosisLowerPercent));
         ValidatePercent(EstimatedDiameterStenosisUpperPercent, nameof(EstimatedDiameterStenosisUpperPercent));
+        ValidatePositive(ReferenceDiameterPixels, nameof(ReferenceDiameterPixels));
+        ValidatePositive(MinimumLumenDiameterPixels, nameof(MinimumLumenDiameterPixels));
+        ValidatePositive(LesionLengthPixels, nameof(LesionLengthPixels));
+        ValidatePositive(ReferenceDiameterMm, nameof(ReferenceDiameterMm));
+        ValidatePositive(MinimumLumenDiameterMm, nameof(MinimumLumenDiameterMm));
+        ValidatePositive(LesionLengthMm, nameof(LesionLengthMm));
+
+        if (MeasurementQualityScore.HasValue &&
+            (double.IsNaN(MeasurementQualityScore.Value) ||
+             double.IsInfinity(MeasurementQualityScore.Value) ||
+             MeasurementQualityScore.Value is < 0 or > 1))
+        {
+            throw new InvalidOperationException("MeasurementQualityScore must be between 0 and 1.");
+        }
+
+        if (MeasurementFrameCount is < 0)
+            throw new InvalidOperationException("MeasurementFrameCount cannot be negative.");
+
+        if (MeasurementVariabilityPercent.HasValue &&
+            (double.IsNaN(MeasurementVariabilityPercent.Value) ||
+             double.IsInfinity(MeasurementVariabilityPercent.Value) ||
+             MeasurementVariabilityPercent.Value is < 0 or > 100))
+        {
+            throw new InvalidOperationException("MeasurementVariabilityPercent must be between 0 and 100.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(MeasurementQuality) &&
+            MeasurementQuality is not ("Limited" or "Moderate" or "High"))
+        {
+            throw new InvalidOperationException("MeasurementQuality must be Limited, Moderate, or High.");
+        }
+
+        if (ReferenceDiameterPixels.HasValue &&
+            MinimumLumenDiameterPixels.HasValue &&
+            MinimumLumenDiameterPixels.Value > ReferenceDiameterPixels.Value)
+        {
+            throw new InvalidOperationException("Minimum lumen diameter cannot exceed reference diameter.");
+        }
+
+        if (ReferenceDiameterMm.HasValue &&
+            MinimumLumenDiameterMm.HasValue &&
+            MinimumLumenDiameterMm.Value > ReferenceDiameterMm.Value)
+        {
+            throw new InvalidOperationException("Minimum lumen diameter in mm cannot exceed reference diameter.");
+        }
 
         if (EstimatedDiameterStenosisLowerPercent.HasValue &&
             EstimatedDiameterStenosisUpperPercent.HasValue &&
@@ -210,6 +266,18 @@ public sealed class GuardianFinding
             value.Value is < 0 or > 100)
         {
             throw new InvalidOperationException($"{name} must be between 0 and 100.");
+        }
+    }
+
+    private static void ValidatePositive(double? value, string name)
+    {
+        if (!value.HasValue) return;
+
+        if (double.IsNaN(value.Value) ||
+            double.IsInfinity(value.Value) ||
+            value.Value <= 0)
+        {
+            throw new InvalidOperationException($"{name} must be greater than zero.");
         }
     }
 }
@@ -368,6 +436,17 @@ public sealed class StructuredFindingItem
     public double? EstimatedDiameterStenosisPercent { get; init; }
     public double? EstimatedDiameterStenosisLowerPercent { get; init; }
     public double? EstimatedDiameterStenosisUpperPercent { get; init; }
+    public double? ReferenceDiameterPixels { get; init; }
+    public double? MinimumLumenDiameterPixels { get; init; }
+    public double? LesionLengthPixels { get; init; }
+    public double? ReferenceDiameterMm { get; init; }
+    public double? MinimumLumenDiameterMm { get; init; }
+    public double? LesionLengthMm { get; init; }
+    public string? MeasurementQuality { get; init; }
+    public double? MeasurementQualityScore { get; init; }
+    public int? MeasurementFrameCount { get; init; }
+    public double? MeasurementVariabilityPercent { get; init; }
+    public string? CalibrationSource { get; init; }
     public IReadOnlyList<StructuredEvidenceItem> Evidence { get; init; } = Array.Empty<StructuredEvidenceItem>();
 }
 
