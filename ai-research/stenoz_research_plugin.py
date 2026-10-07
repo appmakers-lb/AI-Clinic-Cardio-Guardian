@@ -981,7 +981,8 @@ class StenozResearchPlugin:
                     ),
                     "measurementSummary": (
                         f"Review-only location seen across {group.support_count} sampled "
-                        "frame(s). No stenosis percentage reported."
+                        "frame(s). QCA percentage withheld: frame-quality gate did not retain "
+                        "enough usable frames for quantitative measurement."
                     ),
                     "evidence": evidence,
                 }
