@@ -1037,7 +1037,7 @@ public partial class MainWindow : Window
                         StringComparison.OrdinalIgnoreCase)
                     ? (_findingFocusMode
                         ? $"FOCUS • REVIEW REGION • score {_selectedFinding.Confidence:0.00} • Esc to exit"
-                        : $"REVIEW REGION • score {_selectedFinding.Confidence:0.00} • QCA withheld")
+                        : $"REVIEW REGION • score {_selectedFinding.Confidence:0.00} • QCA withheld ({GetQcaWithheldGateLabel(_selectedFinding)})")
                     : (_findingFocusMode
                         ? $"FOCUS • candidate score {_selectedFinding.Confidence:0.00} • Esc to exit"
                         : $"RESEARCH AI CANDIDATE • score {_selectedFinding.Confidence:0.00}");
@@ -1673,7 +1673,7 @@ public partial class MainWindow : Window
         StatusText.Text =
             _selectedFinding.EstimatedDiameterStenosisPercent is double estimate
                 ? $"AI highlighted the strongest measured region — research QCA ~{estimate:0}%."
-                : "AI highlighted the strongest persistent review region. QCA percentage was withheld by quality gates.";
+                : $"AI highlighted the strongest persistent review region. QCA withheld: {GetQcaWithheldReason(_selectedFinding)}.";
     }
 
     private void RefreshFindings()
@@ -1761,6 +1761,42 @@ public partial class MainWindow : Window
         ChatLog.ScrollToEnd();
     }
 
+    private static string GetQcaWithheldReason(GuardianFinding finding)
+    {
+        const string marker = "QCA percentage withheld:";
+        var summary = finding.MeasurementSummary;
+
+        if (!string.IsNullOrWhiteSpace(summary))
+        {
+            var index = summary.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (index >= 0)
+            {
+                var reason = summary[(index + marker.Length)..].Trim().TrimEnd('.');
+                if (!string.IsNullOrWhiteSpace(reason))
+                    return reason;
+            }
+        }
+
+        return "current evidence did not pass the quantitative QCA quality gates";
+    }
+
+    private static string GetQcaWithheldGateLabel(GuardianFinding finding)
+    {
+        var reason = GetQcaWithheldReason(finding);
+
+        if (reason.Contains("variability", StringComparison.OrdinalIgnoreCase))
+            return "cross-frame variability";
+        if (reason.Contains("geometry", StringComparison.OrdinalIgnoreCase))
+            return "lumen/reference geometry";
+        if (reason.Contains("measurement quality", StringComparison.OrdinalIgnoreCase))
+            return "measurement quality";
+        if (reason.Contains("frame-quality", StringComparison.OrdinalIgnoreCase) ||
+            reason.Contains("usable frames", StringComparison.OrdinalIgnoreCase))
+            return "frame quality";
+
+        return "quality gate";
+    }
+
     private static string BuildResearchEstimateLabel(GuardianFinding finding)
     {
         if (string.Equals(
@@ -1783,7 +1819,7 @@ public partial class MainWindow : Window
         }
 
         if (finding.EstimatedDiameterStenosisPercent is not double estimate)
-            return "Research QCA: measurement withheld because current evidence did not pass quality gates.";
+            return $"Research QCA: measurement withheld — {GetQcaWithheldReason(finding)}.";
 
         var builder = new StringBuilder();
         builder.Append($"Research QCA diameter stenosis: ~{estimate:0.#}%");
